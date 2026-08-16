@@ -7,6 +7,8 @@ internal sealed class HotKeyService : NativeWindow, IDisposable
     private const int HotKeyId = 0x5147;
     private bool _isRegistered;
 
+    public bool IsRegistered => _isRegistered;
+
     public event EventHandler? Pressed;
 
     public HotKeyService()

@@ -10,6 +10,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ContextMenuStrip _menu = new();
     private readonly ToolStripMenuItem _currentWindowItem = new();
     private readonly ToolStripMenuItem _windowListItem = new("열린 창 선택");
+    private readonly ToolStripMenuItem _hotKeyDiagnosticsItem = new("사용 중인 전역 단축키...");
     private readonly ToolStripMenuItem _updateItem = new("업데이트 확인...");
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly System.Windows.Forms.Timer _startupUpdateTimer = new() { Interval = 5000 };
@@ -30,6 +31,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var settingsItem = new ToolStripMenuItem("설정...");
         settingsItem.Click += (_, _) => ShowSettings();
+        _hotKeyDiagnosticsItem.Click += (_, _) => ShowHotKeyDiagnostics();
         _updateItem.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
         var exitItem = new ToolStripMenuItem("종료");
         exitItem.Click += (_, _) => ExitThread();
@@ -39,6 +41,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(_currentWindowItem);
         _menu.Items.Add(_windowListItem);
         _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(_hotKeyDiagnosticsItem);
         _menu.Items.Add(_updateItem);
         _menu.Items.Add(settingsItem);
         _menu.Items.Add(exitItem);
@@ -319,6 +322,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ShowBalloon("설정 저장됨", $"전역 단축키: {FormatHotKey(_settings)}", ToolTipIcon.Info);
     }
 
+    private void ShowHotKeyDiagnostics()
+    {
+        using var form = new HotKeyDiagnosticsForm(_settings, _hotKeyService.IsRegistered);
+        form.ShowDialog();
+    }
+
     private void ShowBalloon(string title, string message, ToolTipIcon icon, bool force = false)
     {
         if (!force && !_settings.ShowNotifications)
@@ -332,16 +341,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.ShowBalloonTip(2500);
     }
 
-    private static string FormatHotKey(AppSettings settings)
-    {
-        var parts = new List<string>();
-        if (settings.Modifiers.HasFlag(HotKeyModifiers.Control)) parts.Add("Ctrl");
-        if (settings.Modifiers.HasFlag(HotKeyModifiers.Win)) parts.Add("Win");
-        if (settings.Modifiers.HasFlag(HotKeyModifiers.Alt)) parts.Add("Alt");
-        if (settings.Modifiers.HasFlag(HotKeyModifiers.Shift)) parts.Add("Shift");
-        parts.Add(settings.Key.ToString());
-        return string.Join(" + ", parts);
-    }
+    private static string FormatHotKey(AppSettings settings) =>
+        HotKeyFormatter.Format(settings.Modifiers, settings.Key);
 
     private static string TrimText(string text, int maximumLength) =>
         text.Length <= maximumLength ? text : text[..(maximumLength - 1)] + "…";
