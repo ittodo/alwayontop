@@ -21,10 +21,6 @@ internal sealed class HotKeyAvailabilityScanner
             {
                 if (appHotKeyRegistered && modifiers == settings.Modifiers && key == settings.Key)
                 {
-                    results.Add(new DetectedHotKey(
-                        HotKeyFormatter.Format(modifiers, key),
-                        "Tray Always On Top",
-                        true));
                     continue;
                 }
 
@@ -42,8 +38,7 @@ internal sealed class HotKeyAvailabilityScanner
                 {
                     results.Add(new DetectedHotKey(
                         HotKeyFormatter.Format(modifiers, key),
-                        "Windows 또는 다른 프로그램",
-                        false));
+                        "Windows 또는 다른 프로그램"));
                 }
             }
         }
@@ -116,4 +111,4 @@ internal sealed class HotKeyAvailabilityScanner
     }
 }
 
-internal sealed record DetectedHotKey(string Shortcut, string Source, bool IsThisApp);
+internal sealed record DetectedHotKey(string Shortcut, string Source);

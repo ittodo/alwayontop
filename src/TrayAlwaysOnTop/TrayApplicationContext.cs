@@ -10,7 +10,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ContextMenuStrip _menu = new();
     private readonly ToolStripMenuItem _currentWindowItem = new();
     private readonly ToolStripMenuItem _windowListItem = new("열린 창 선택");
-    private readonly ToolStripMenuItem _hotKeyDiagnosticsItem = new("사용 중인 전역 단축키...");
+    private readonly ToolStripMenuItem _hotKeyDiagnosticsItem = new("전역 단축키 목록...");
     private readonly ToolStripMenuItem _updateItem = new("업데이트 확인...");
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly System.Windows.Forms.Timer _startupUpdateTimer = new() { Interval = 5000 };
