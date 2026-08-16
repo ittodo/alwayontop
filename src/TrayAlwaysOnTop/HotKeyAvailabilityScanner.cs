@@ -37,6 +37,8 @@ internal sealed class HotKeyAvailabilityScanner
                 else if (Marshal.GetLastWin32Error() == ErrorHotKeyAlreadyRegistered)
                 {
                     results.Add(new DetectedHotKey(
+                        modifiers,
+                        key,
                         HotKeyFormatter.Format(modifiers, key),
                         "Windows 또는 다른 프로그램"));
                 }
@@ -111,4 +113,8 @@ internal sealed class HotKeyAvailabilityScanner
     }
 }
 
-internal sealed record DetectedHotKey(string Shortcut, string Source);
+internal sealed record DetectedHotKey(
+    HotKeyModifiers Modifiers,
+    Keys Key,
+    string Shortcut,
+    string Source);
