@@ -19,8 +19,12 @@ internal sealed record KeyboardShortcutVisual(
 internal sealed class KeyboardShortcutMapControl : Control
 {
     private static readonly IReadOnlyList<KeySpec> KeyboardLayout = BuildKeyboardLayout();
+    private readonly List<KeyHitTarget> _keyHitTargets = [];
     private IReadOnlyList<KeyboardShortcutVisual> _shortcuts = [];
     private KeyboardShortcutVisual? _selectedShortcut;
+    private KeySpec? _hoveredKey;
+
+    public event Action<KeyboardShortcutVisual>? ShortcutSelected;
 
     public KeyboardShortcutMapControl()
     {
@@ -35,6 +39,7 @@ internal sealed class KeyboardShortcutMapControl : Control
     {
         _shortcuts = shortcuts;
         _selectedShortcut = shortcuts.FirstOrDefault();
+        _hoveredKey = null;
         Invalidate();
     }
 
@@ -70,6 +75,7 @@ internal sealed class KeyboardShortcutMapControl : Control
         using var labelBrush = new SolidBrush(Color.FromArgb(38, 43, 48));
         using var borderPen = new Pen(Color.FromArgb(168, 174, 181), Math.Max(1f, scale));
 
+        _keyHitTargets.Clear();
         foreach (var key in KeyboardLayout)
         {
             var rectangle = new RectangleF(
@@ -77,12 +83,14 @@ internal sealed class KeyboardShortcutMapControl : Control
                 originY + key.Y * unit + gap / 2,
                 key.Width * unit - gap,
                 key.Height * unit - gap);
-            var relatedShortcuts = _shortcuts.Where(shortcut => KeyMatches(shortcut.Key, key.Key)).ToArray();
+            _keyHitTargets.Add(new KeyHitTarget(key, rectangle));
+            var relatedShortcuts = GetRelatedShortcuts(key);
             var isSelectedTarget = _selectedShortcut is not null && KeyMatches(_selectedShortcut.Key, key.Key);
             var isSelectedModifier = _selectedShortcut is not null
                 && key.Modifier != HotKeyModifiers.None
                 && _selectedShortcut.Modifiers.HasFlag(key.Modifier);
             var isSelected = isSelectedTarget || isSelectedModifier;
+            var isHovered = Equals(_hoveredKey, key) && relatedShortcuts.Length > 0;
             var visualKind = isSelected
                 ? _selectedShortcut!.Kind
                 : relatedShortcuts.FirstOrDefault()?.Kind;
@@ -97,6 +105,13 @@ internal sealed class KeyboardShortcutMapControl : Control
             {
                 using var selectedPen = new Pen(GetAccentColor(visualKind!.Value), Math.Max(2f, 2.2f * scale));
                 graphics.DrawPath(selectedPen, path);
+            }
+            else if (isHovered)
+            {
+                using var hoverPen = new Pen(
+                    GetAccentColor(relatedShortcuts[0].Kind),
+                    Math.Max(1.5f, 1.8f * scale));
+                graphics.DrawPath(hoverPen, path);
             }
             else
             {
@@ -118,11 +133,62 @@ internal sealed class KeyboardShortcutMapControl : Control
         }
     }
 
+    protected override void OnMouseMove(MouseEventArgs eventArgs)
+    {
+        base.OnMouseMove(eventArgs);
+        var hit = HitTest(eventArgs.Location);
+        var hoveredKey = hit is not null && GetRelatedShortcuts(hit.Key).Length > 0
+            ? hit.Key
+            : null;
+        if (!Equals(_hoveredKey, hoveredKey))
+        {
+            _hoveredKey = hoveredKey;
+            Cursor = hoveredKey is null ? Cursors.Default : Cursors.Hand;
+            Invalidate();
+        }
+    }
+
+    protected override void OnMouseLeave(EventArgs eventArgs)
+    {
+        base.OnMouseLeave(eventArgs);
+        _hoveredKey = null;
+        Cursor = Cursors.Default;
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    {
+        base.OnMouseDown(eventArgs);
+        if (eventArgs.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        var hit = HitTest(eventArgs.Location);
+        if (hit is null)
+        {
+            return;
+        }
+
+        var relatedShortcuts = GetRelatedShortcuts(hit.Key);
+        if (relatedShortcuts.Length == 0)
+        {
+            return;
+        }
+
+        var selectedIndex = _selectedShortcut is null
+            ? -1
+            : Array.FindIndex(relatedShortcuts, shortcut => shortcut == _selectedShortcut);
+        var selected = relatedShortcuts[(selectedIndex + 1) % relatedShortcuts.Length];
+        SelectShortcut(selected);
+        ShortcutSelected?.Invoke(selected);
+    }
+
     private void DrawSelectionHeader(Graphics graphics, RectangleF bounds)
     {
         var selected = _selectedShortcut;
         var text = selected is null
-            ? "목록에서 단축키를 선택하면 키보드 위에 표시됩니다."
+            ? "키보드나 목록에서 단축키를 선택하세요."
             : $"{selected.Shortcut}  —  {selected.Description}";
         var accent = selected is null ? Color.FromArgb(105, 110, 118) : GetAccentColor(selected.Kind);
         var dotSize = Math.Max(8f, 10f * DeviceDpi / 96f);
@@ -181,6 +247,13 @@ internal sealed class KeyboardShortcutMapControl : Control
 
     private static bool KeyMatches(Keys left, Keys right) =>
         (left & Keys.KeyCode) == (right & Keys.KeyCode);
+
+    private KeyboardShortcutVisual[] GetRelatedShortcuts(KeySpec key) => key.Modifier == HotKeyModifiers.None
+        ? _shortcuts.Where(shortcut => KeyMatches(shortcut.Key, key.Key)).ToArray()
+        : _shortcuts.Where(shortcut => shortcut.Modifiers.HasFlag(key.Modifier)).ToArray();
+
+    private KeyHitTarget? HitTest(Point location) =>
+        _keyHitTargets.LastOrDefault(target => target.Bounds.Contains(location));
 
     private static GraphicsPath CreateRoundedRectangle(RectangleF bounds, float radius)
     {
@@ -266,4 +339,6 @@ internal sealed class KeyboardShortcutMapControl : Control
         string Label,
         Keys Key,
         HotKeyModifiers Modifier);
+
+    private sealed record KeyHitTarget(KeySpec Key, RectangleF Bounds);
 }

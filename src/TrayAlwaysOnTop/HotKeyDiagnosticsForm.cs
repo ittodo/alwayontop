@@ -195,6 +195,21 @@ internal sealed class HotKeyDiagnosticsForm : Form
                 : list.SelectedItems[0].Tag as KeyboardShortcutVisual;
             keyboard.SelectShortcut(selected);
         };
+        keyboard.ShortcutSelected += selected =>
+        {
+            var matchingItem = list.Items
+                .Cast<ListViewItem>()
+                .FirstOrDefault(item => item.Tag as KeyboardShortcutVisual == selected);
+            if (matchingItem is null)
+            {
+                return;
+            }
+
+            list.SelectedItems.Clear();
+            matchingItem.Selected = true;
+            matchingItem.Focused = true;
+            matchingItem.EnsureVisible();
+        };
     }
 
     private static void SelectFirstItem(ListView list)
