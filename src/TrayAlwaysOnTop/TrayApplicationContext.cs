@@ -5,6 +5,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly SettingsStore _settingsStore = new();
     private readonly HotKeyService _hotKeyService = new();
     private readonly UpdateService _updateService = new();
+    private readonly GlobalModifierOverlayService _modifierOverlayService;
     private readonly WindowManager _windowManager;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu = new();
@@ -71,6 +72,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ShowBalloon("단축키 등록 실패", hotKeyError ?? "단축키를 등록할 수 없습니다.", ToolTipIcon.Warning, force: true);
         }
 
+        _modifierOverlayService = new GlobalModifierOverlayService(
+            () => _settings.Copy(),
+            () => _hotKeyService.IsRegistered);
+        if (!_modifierOverlayService.TrySetEnabled(_settings.ShowGlobalShortcutOverlay, out var overlayError))
+        {
+            ShowBalloon(
+                "단축키 안내 시작 실패",
+                overlayError ?? "화면 중앙 단축키 안내를 시작하지 못했습니다.",
+                ToolTipIcon.Warning,
+                force: true);
+        }
+
         if (startupError is not null)
         {
             ShowBalloon("자동 실행 설정 실패", startupError, ToolTipIcon.Warning, force: true);
@@ -110,6 +123,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _startupUpdateTimer.Dispose();
         _timer.Stop();
         _timer.Dispose();
+        _modifierOverlayService.Dispose();
         _hotKeyService.Dispose();
         _windowManager.Dispose();
         _notifyIcon.Visible = false;
@@ -296,6 +310,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _settings = form.Result;
         _windowManager.SetOverlayOptions(_settings.ShowBorder, _settings.ShowPinToggle);
+        var overlayApplied = _modifierOverlayService.TrySetEnabled(
+            _settings.ShowGlobalShortcutOverlay,
+            out var overlayError);
         var startupApplied = StartupManager.TrySetEnabled(_settings.StartWithWindows, out var startupError);
         try
         {
@@ -315,6 +332,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
             MessageBox.Show(
                 $"Windows 자동 실행 설정을 적용하지 못했습니다.\n{startupError}",
                 "자동 실행 설정 실패",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        if (!overlayApplied)
+        {
+            MessageBox.Show(
+                overlayError ?? "화면 중앙 단축키 안내 설정을 적용하지 못했습니다.",
+                "단축키 안내 설정 실패",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
         }

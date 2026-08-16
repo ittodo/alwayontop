@@ -12,6 +12,8 @@ internal sealed class AppSettings
 
     public bool ShowNotifications { get; set; } = true;
 
+    public bool ShowGlobalShortcutOverlay { get; set; } = true;
+
     public bool StartWithWindows { get; set; } = true;
 
     public AppSettings Copy() => new()
@@ -21,6 +23,7 @@ internal sealed class AppSettings
         ShowBorder = ShowBorder,
         ShowPinToggle = ShowPinToggle,
         ShowNotifications = ShowNotifications,
+        ShowGlobalShortcutOverlay = ShowGlobalShortcutOverlay,
         StartWithWindows = StartWithWindows
     };
 }

@@ -21,6 +21,23 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--hook-smoke-test", StringComparer.OrdinalIgnoreCase))
+        {
+            ApplicationConfiguration.Initialize();
+            var settings = new AppSettings();
+            using var overlayService = new GlobalModifierOverlayService(
+                () => settings.Copy(),
+                () => true);
+            if (!overlayService.TrySetEnabled(true, out _))
+            {
+                Environment.ExitCode = 2;
+                return;
+            }
+
+            overlayService.TrySetEnabled(false, out _);
+            return;
+        }
+
         using var singleInstance = new Mutex(true, "Local\\TrayAlwaysOnTop.SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
         {

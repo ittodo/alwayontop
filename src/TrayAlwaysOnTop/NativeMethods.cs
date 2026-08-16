@@ -15,6 +15,11 @@ internal enum HotKeyModifiers : uint
 }
 internal static class NativeMethods
 {
+    internal const int WhKeyboardLl = 13;
+    internal const int WmKeyDown = 0x0100;
+    internal const int WmKeyUp = 0x0101;
+    internal const int WmSysKeyDown = 0x0104;
+    internal const int WmSysKeyUp = 0x0105;
     internal const int WmHotKey = 0x0312;
     internal const int GwlExStyle = -20;
     internal const long WsExTopmost = 0x00000008L;
@@ -29,6 +34,24 @@ internal static class NativeMethods
     internal static readonly nint HwndNoTopmost = new(-2);
 
     internal delegate bool EnumWindowsProc(nint windowHandle, nint parameter);
+    internal delegate nint LowLevelKeyboardProc(int code, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern nint SetWindowsHookExW(
+        int hookId,
+        LowLevelKeyboardProc callback,
+        nint moduleHandle,
+        uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool UnhookWindowsHookEx(nint hookHandle);
+
+    [DllImport("user32.dll")]
+    internal static extern nint CallNextHookEx(nint hookHandle, int code, nint wParam, nint lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern nint GetModuleHandleW(string? moduleName);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -121,4 +144,14 @@ internal struct NativeRect
     public int Bottom;
 
     public readonly Rectangle ToRectangle() => Rectangle.FromLTRB(Left, Top, Right, Bottom);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct LowLevelKeyboardInput
+{
+    public uint VirtualKeyCode;
+    public uint ScanCode;
+    public uint Flags;
+    public uint Time;
+    public nuint ExtraInfo;
 }
