@@ -157,6 +157,11 @@ internal sealed class WindowManager : IDisposable
 
     public void Dispose()
     {
+        ReleaseAllPins();
+    }
+
+    public void ReleaseAllPins()
+    {
         foreach (var overlay in _overlays.Values)
         {
             overlay.Dispose();

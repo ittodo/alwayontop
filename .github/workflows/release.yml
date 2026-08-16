@@ -1,0 +1,83 @@
+name: Build and publish Velopack release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read and validate version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Tag must use a semantic version such as v1.2.3."
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install matching Velopack CLI
+        shell: pwsh
+        run: dotnet tool install -g vpk --version 1.2.0
+
+      - name: Download previous release for delta generation
+        shell: pwsh
+        run: |
+          vpk download github `
+            --repoUrl "https://github.com/${{ github.repository }}" `
+            --token "${{ secrets.GITHUB_TOKEN }}" `
+            --outputDir artifacts/releases
+
+      - name: Publish application
+        shell: pwsh
+        run: |
+          dotnet publish .\src\TrayAlwaysOnTop\TrayAlwaysOnTop.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output .\artifacts\publish\win-x64 `
+            -p:Version=${{ steps.version.outputs.value }} `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true
+
+      - name: Build Velopack packages
+        shell: pwsh
+        run: |
+          vpk pack `
+            --packId TrayAlwaysOnTop `
+            --packVersion "${{ steps.version.outputs.value }}" `
+            --packDir .\artifacts\publish\win-x64 `
+            --mainExe TrayAlwaysOnTop.exe `
+            --packTitle "Tray Always On Top" `
+            --packAuthors "ittodo" `
+            --runtime win-x64 `
+            --shortcuts StartMenuRoot `
+            --outputDir .\artifacts\releases `
+            --yes
+
+      - name: Publish GitHub release
+        shell: pwsh
+        run: |
+          vpk upload github `
+            --repoUrl "https://github.com/${{ github.repository }}" `
+            --token "${{ secrets.GITHUB_TOKEN }}" `
+            --publish `
+            --releaseName "Tray Always On Top ${{ steps.version.outputs.value }}" `
+            --tag "${{ github.ref_name }}" `
+            --targetCommitish "${{ github.sha }}" `
+            --outputDir .\artifacts\releases

@@ -9,6 +9,7 @@ internal static class Program
     {
         // Velopack must process install/update hooks before any UI or singleton logic.
         VelopackApp.Build()
+            .SetAutoApplyOnStartup(true)
             .OnBeforeUninstallFastCallback(version =>
             {
                 StartupManager.TrySetEnabled(false, out var ignoredError);

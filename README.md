@@ -14,6 +14,7 @@ PowerToys의 **Always on Top** 핵심 동작을 작은 Windows 트레이 앱으�
 - 앱을 끝낼 때 이 앱이 고정한 창을 원래 상태로 복원
 - 중복 실행 방지
 - Velopack 설치 및 업데이트 패키지 생성
+- GitHub Releases에서 새 버전 자동 확인·다운로드
 
 관리자 권한으로 실행된 프로그램의 창은 Windows 보안 경계 때문에 일반 권한으로 실행한 이 앱에서 변경하지 못할 수 있습니다. 그런 창을 제어하려면 이 앱도 관리자 권한으로 실행해야 합니다.
 
@@ -46,3 +47,16 @@ dotnet tool install -g vpk --version 1.2.0
 - `releases.win.json`: Velopack 업데이트 피드 메타데이터
 
 후속 버전을 만들 때는 이전 `artifacts\releases` 폴더를 유지한 채 버전만 올려 실행하면 Velopack이 필요한 릴리스 파일을 갱신합니다.
+
+## GitHub 자동 배포와 업데이트
+
+설치된 앱은 시작 5초 후 [GitHub Releases](https://github.com/ittodo/alwayontop/releases)를 확인합니다. 새 버전이 있으면 백그라운드에서 내려받고 다음 앱 시작 때 자동으로 적용합니다. 트레이 메뉴의 **업데이트 확인...**을 선택하면 즉시 확인하거나 준비된 업데이트를 바로 적용할 수 있습니다.
+
+새 버전을 배포하려면 `main`의 배포할 커밋에 버전 태그를 푸시합니다.
+
+```powershell
+git tag v1.0.3
+git push origin v1.0.3
+```
+
+`.github/workflows/release.yml`이 Windows 실행 파일을 빌드하고 Velopack 전체·델타 패키지와 설치 프로그램을 GitHub Release에 자동 게시합니다. 태그는 `v1.2.3` 형태의 SemVer를 사용해야 합니다.

@@ -4,13 +4,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly SettingsStore _settingsStore = new();
     private readonly HotKeyService _hotKeyService = new();
+    private readonly UpdateService _updateService = new();
     private readonly WindowManager _windowManager;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu = new();
     private readonly ToolStripMenuItem _currentWindowItem = new();
     private readonly ToolStripMenuItem _windowListItem = new("열린 창 선택");
+    private readonly ToolStripMenuItem _updateItem = new("업데이트 확인...");
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
+    private readonly System.Windows.Forms.Timer _startupUpdateTimer = new() { Interval = 5000 };
+    private readonly CancellationTokenSource _shutdown = new();
     private AppSettings _settings;
+    private bool _updateCheckRunning;
     private bool _disposed;
 
     public TrayApplicationContext()
@@ -25,6 +30,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var settingsItem = new ToolStripMenuItem("설정...");
         settingsItem.Click += (_, _) => ShowSettings();
+        _updateItem.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
         var exitItem = new ToolStripMenuItem("종료");
         exitItem.Click += (_, _) => ExitThread();
 
@@ -33,6 +39,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(_currentWindowItem);
         _menu.Items.Add(_windowListItem);
         _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(_updateItem);
         _menu.Items.Add(settingsItem);
         _menu.Items.Add(exitItem);
         _menu.Opening += (_, _) =>
@@ -73,6 +80,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _timer.Start();
 
+        _startupUpdateTimer.Tick += async (_, _) =>
+        {
+            _startupUpdateTimer.Stop();
+            await CheckForUpdatesAsync(manual: false);
+        };
+        _startupUpdateTimer.Start();
+
         ShowBalloon(
             "Tray Always On Top 실행 중",
             $"{FormatHotKey(_settings)}를 눌러 현재 창을 고정하거나 해제하세요.",
@@ -88,6 +102,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         _disposed = true;
+        _shutdown.Cancel();
+        _startupUpdateTimer.Stop();
+        _startupUpdateTimer.Dispose();
         _timer.Stop();
         _timer.Dispose();
         _hotKeyService.Dispose();
@@ -96,7 +113,102 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.Icon?.Dispose();
         _notifyIcon.Dispose();
         _menu.Dispose();
+        _shutdown.Dispose();
         base.ExitThreadCore();
+    }
+
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (_updateCheckRunning || _disposed)
+        {
+            return;
+        }
+
+        _updateCheckRunning = true;
+        _updateItem.Enabled = false;
+        _updateItem.Text = "업데이트 확인 중...";
+
+        try
+        {
+            var result = await _updateService.CheckAndDownloadAsync(
+                progress: null,
+                cancellationToken: _shutdown.Token);
+
+            switch (result.Status)
+            {
+                case UpdateCheckStatus.NotInstalled:
+                    _updateItem.Text = "업데이트 확인...";
+                    if (manual)
+                    {
+                        MessageBox.Show(
+                            "자동 업데이트는 Velopack으로 설치한 버전에서 사용할 수 있습니다.",
+                            "업데이트",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                    break;
+
+                case UpdateCheckStatus.UpToDate:
+                    _updateItem.Text = "업데이트 확인...";
+                    if (manual)
+                    {
+                        MessageBox.Show(
+                            $"현재 최신 버전입니다. ({result.Version ?? "버전 확인 불가"})",
+                            "업데이트",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                    break;
+
+                case UpdateCheckStatus.ReadyToRestart:
+                    _updateItem.Text = $"업데이트 준비됨 ({result.Version})";
+                    if (manual)
+                    {
+                        var restart = MessageBox.Show(
+                            $"버전 {result.Version} 업데이트가 준비되었습니다. 지금 다시 시작할까요?",
+                            "업데이트 준비됨",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Information);
+                        if (restart == DialogResult.Yes)
+                        {
+                            _windowManager.ReleaseAllPins();
+                            _updateService.ApplyPendingUpdateAndRestart();
+                        }
+                    }
+                    else
+                    {
+                        ShowBalloon(
+                            "업데이트 준비됨",
+                            $"버전 {result.Version}을 내려받았습니다. 다음 실행 때 자동 적용됩니다.",
+                            ToolTipIcon.Info);
+                    }
+                    break;
+            }
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            // The app is shutting down.
+        }
+        catch (Exception exception)
+        {
+            _updateItem.Text = "업데이트 확인...";
+            if (manual)
+            {
+                MessageBox.Show(
+                    $"업데이트를 확인하지 못했습니다.\n{exception.Message}",
+                    "업데이트 확인 실패",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+        finally
+        {
+            _updateCheckRunning = false;
+            if (!_disposed)
+            {
+                _updateItem.Enabled = true;
+            }
+        }
     }
 
     private void ToggleLastWindow()
