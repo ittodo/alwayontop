@@ -23,6 +23,7 @@ internal static class NativeMethods
     internal const uint SwpNoActivate = 0x0010;
     internal const uint GaRoot = 2;
     internal const int DwmwaCloaked = 14;
+    internal const int DwmwaCaptionButtonBounds = 5;
     internal const int DwmwaExtendedFrameBounds = 9;
     internal static readonly nint HwndTopmost = new(-1);
     internal static readonly nint HwndNoTopmost = new(-2);

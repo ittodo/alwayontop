@@ -5,7 +5,7 @@ namespace TrayAlwaysOnTop;
 internal sealed class BorderOverlay : IDisposable
 {
     private const int Thickness = 4;
-    private const int PinSize = 32;
+    private const int PinSize = 24;
     private readonly nint _target;
     private readonly OverlayStrip[] _strips;
     private readonly PinToggleOverlay _pinToggle;
@@ -61,12 +61,39 @@ internal sealed class BorderOverlay : IDisposable
         _strips[2].SetBounds(rectangle.Left, rectangle.Top + Thickness, Thickness, Math.Max(1, rectangle.Height - (Thickness * 2)));
         _strips[3].SetBounds(rectangle.Right - Thickness, rectangle.Top + Thickness, Thickness, Math.Max(1, rectangle.Height - (Thickness * 2)));
 
-        // Keep the toggle left of the standard minimize/maximize/close buttons.
-        var pinX = rectangle.Width >= 240
-            ? rectangle.Right - 178
-            : rectangle.Left + Math.Max(0, (rectangle.Width - PinSize) / 2);
-        _pinToggle.SetBounds(pinX, rectangle.Top + 7, PinSize, PinSize);
+        var pinBounds = GetPinBounds(rectangle);
+        _pinToggle.SetBounds(pinBounds.X, pinBounds.Y, pinBounds.Width, pinBounds.Height);
         SetVisible(true);
+    }
+
+    private Rectangle GetPinBounds(Rectangle windowBounds)
+    {
+        var captionResult = NativeMethods.DwmGetWindowAttribute(
+            _target,
+            NativeMethods.DwmwaCaptionButtonBounds,
+            out NativeRect captionButtons,
+            System.Runtime.InteropServices.Marshal.SizeOf<NativeRect>());
+
+        if (captionResult == 0
+            && captionButtons.Right > captionButtons.Left
+            && captionButtons.Bottom > captionButtons.Top)
+        {
+            var captionHeight = captionButtons.Bottom - captionButtons.Top;
+            var x = windowBounds.Left + captionButtons.Left - PinSize - 8;
+            var y = windowBounds.Top + captionButtons.Top + Math.Max(0, (captionHeight - PinSize) / 2);
+            return new Rectangle(
+                Math.Clamp(x, windowBounds.Left + 6, windowBounds.Right - PinSize - 6),
+                Math.Clamp(y, windowBounds.Top + 2, windowBounds.Bottom - PinSize - 2),
+                PinSize,
+                PinSize);
+        }
+
+        // Custom title bars often do not expose caption button bounds. Keep a
+        // conservative gap from the right edge and center on a standard caption.
+        var fallbackX = windowBounds.Width >= 210
+            ? windowBounds.Right - 166
+            : windowBounds.Left + Math.Max(0, (windowBounds.Width - PinSize) / 2);
+        return new Rectangle(fallbackX, windowBounds.Top + 4, PinSize, PinSize);
     }
 
     public void Dispose()
@@ -197,11 +224,11 @@ internal sealed class BorderOverlay : IDisposable
                 StartCap = LineCap.Round,
                 EndCap = LineCap.Round
             };
-            graphics.DrawLine(pinPen, 10, 10, 22, 10);
-            graphics.DrawLine(pinPen, 12, 10, 12, 17);
-            graphics.DrawLine(pinPen, 20, 10, 20, 17);
-            graphics.DrawLine(pinPen, 10, 18, 22, 18);
-            graphics.DrawLine(pinPen, 16, 18, 16, 26);
+            graphics.DrawLine(pinPen, 7, 7, 17, 7);
+            graphics.DrawLine(pinPen, 9, 7, 9, 12);
+            graphics.DrawLine(pinPen, 15, 7, 15, 12);
+            graphics.DrawLine(pinPen, 7, 13, 17, 13);
+            graphics.DrawLine(pinPen, 12, 13, 12, 20);
         }
 
         protected override void Dispose(bool disposing)
