@@ -26,6 +26,17 @@ internal static class HotKeyFormatter
             Keys.Next => "PageDown",
             Keys.Prior => "PageUp",
             Keys.Snapshot => "PrintScreen",
+            Keys.Oemtilde => "`",
+            Keys.OemMinus => "-",
+            Keys.Oemplus => "=",
+            Keys.OemOpenBrackets => "[",
+            Keys.OemCloseBrackets => "]",
+            Keys.OemPipe => "\\",
+            Keys.OemSemicolon => ";",
+            Keys.OemQuotes => "'",
+            Keys.Oemcomma => ",",
+            Keys.OemPeriod => ".",
+            Keys.OemQuestion => "/",
             _ => key.ToString()
         };
     }
