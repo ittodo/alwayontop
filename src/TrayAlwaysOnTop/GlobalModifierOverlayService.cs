@@ -22,6 +22,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
     private readonly ModifierShortcutOverlayForm _overlay = new();
     private readonly System.Windows.Forms.Timer _showTimer = new() { Interval = 420 };
     private readonly HashSet<uint> _pressedModifierKeys = [];
+    private readonly WinKeyGestureTracker _winKeyTracker = new();
     private readonly NativeMethods.LowLevelKeyboardProc _hookCallback;
     private nint _hookHandle;
     private bool _disposed;
@@ -93,19 +94,39 @@ internal sealed class GlobalModifierOverlayService : IDisposable
             try
             {
                 var keyboardInput = Marshal.PtrToStructure<LowLevelKeyboardInput>(data);
+                if ((keyboardInput.Flags & NativeMethods.LlkhfInjected) != 0)
+                {
+                    return NativeMethods.CallNextHookEx(_hookHandle, code, message, data);
+                }
+
                 var modifier = GetModifier(keyboardInput.VirtualKeyCode);
                 var messageId = message.ToInt32();
                 var isKeyDown = messageId is NativeMethods.WmKeyDown or NativeMethods.WmSysKeyDown;
                 var isKeyUp = messageId is NativeMethods.WmKeyUp or NativeMethods.WmSysKeyUp;
 
+                if (modifier == HotKeyModifiers.Win)
+                {
+                    if (isKeyDown)
+                    {
+                        return HandleWinKeyDown(keyboardInput.VirtualKeyCode);
+                    }
+
+                    if (isKeyUp)
+                    {
+                        return HandleWinKeyUp(keyboardInput.VirtualKeyCode, code, message, data);
+                    }
+                }
+
                 if (modifier != HotKeyModifiers.None)
                 {
                     if (isKeyDown && _pressedModifierKeys.Add(keyboardInput.VirtualKeyCode))
                     {
+                        _winKeyTracker.MarkOtherModifierActivity();
                         HandleModifiersChanged();
                     }
                     else if (isKeyUp && _pressedModifierKeys.Remove(keyboardInput.VirtualKeyCode))
                     {
+                        _winKeyTracker.MarkOtherModifierActivity();
                         HandleModifiersChanged();
                     }
                 }
@@ -113,15 +134,63 @@ internal sealed class GlobalModifierOverlayService : IDisposable
                 {
                     _showTimer.Stop();
                     _overlay.HideOverlay();
+                    var winKeys = _winKeyTracker.DeliverForShortcut();
+                    if (winKeys.Count > 0
+                        && InjectShortcutKeyDown(winKeys, keyboardInput.VirtualKeyCode))
+                    {
+                        return new nint(1);
+                    }
                 }
             }
             catch
             {
                 // A keyboard hook must never interfere with the user's input path.
+                _pressedModifierKeys.Clear();
+                _winKeyTracker.ResetAndGetDeliveredKeys();
             }
         }
 
         return NativeMethods.CallNextHookEx(_hookHandle, code, message, data);
+    }
+
+    private nint HandleWinKeyDown(uint virtualKeyCode)
+    {
+        var otherModifiers = GetPressedModifiers() & ~HotKeyModifiers.Win;
+        _winKeyTracker.Press(
+            virtualKeyCode,
+            Environment.TickCount64,
+            otherModifiers != HotKeyModifiers.None);
+        if (_pressedModifierKeys.Add(virtualKeyCode))
+        {
+            HandleModifiersChanged();
+        }
+
+        return new nint(1);
+    }
+
+    private nint HandleWinKeyUp(uint virtualKeyCode, int code, nint message, nint data)
+    {
+        var action = _winKeyTracker.Release(
+            virtualKeyCode,
+            Environment.TickCount64,
+            _showTimer.Interval);
+        if (_pressedModifierKeys.Remove(virtualKeyCode))
+        {
+            HandleModifiersChanged();
+        }
+
+        switch (action)
+        {
+            case WinKeyReleaseAction.PassThrough:
+                return NativeMethods.CallNextHookEx(_hookHandle, code, message, data);
+
+            case WinKeyReleaseAction.InjectTap:
+                InjectWinTap(virtualKeyCode);
+                return new nint(1);
+
+            default:
+                return new nint(1);
+        }
     }
 
     private void HandleModifiersChanged()
@@ -150,6 +219,11 @@ internal sealed class GlobalModifierOverlayService : IDisposable
         var modifiers = GetPressedModifiers();
         if (modifiers != HotKeyModifiers.None)
         {
+            if (modifiers.HasFlag(HotKeyModifiers.Win))
+            {
+                _winKeyTracker.MarkLongPress();
+            }
+
             _overlay.ShowFor(modifiers, _getSettings(), _isAppHotKeyRegistered());
         }
     }
@@ -169,15 +243,83 @@ internal sealed class GlobalModifierOverlayService : IDisposable
     {
         _showTimer.Stop();
         _overlay.HideOverlay();
-        _pressedModifierKeys.Clear();
-        if (_hookHandle == nint.Zero)
+        if (_hookHandle != nint.Zero)
         {
-            return;
+            NativeMethods.UnhookWindowsHookEx(_hookHandle);
+            _hookHandle = nint.Zero;
         }
 
-        NativeMethods.UnhookWindowsHookEx(_hookHandle);
-        _hookHandle = nint.Zero;
+        foreach (var virtualKeyCode in _winKeyTracker.ResetAndGetDeliveredKeys())
+        {
+            InjectWinKey(virtualKeyCode, keyUp: true);
+        }
+
+        _pressedModifierKeys.Clear();
     }
+
+    private static bool InjectShortcutKeyDown(IReadOnlyList<uint> winKeys, uint targetKey)
+    {
+        var inputs = new NativeInput[winKeys.Count + 1];
+        for (var index = 0; index < winKeys.Count; index++)
+        {
+            inputs[index] = CreateKeyboardInput(winKeys[index], keyUp: false);
+        }
+
+        inputs[^1] = CreateKeyboardInput(targetKey, keyUp: false);
+        return NativeMethods.SendInput(
+            (uint)inputs.Length,
+            inputs,
+            Marshal.SizeOf<NativeInput>()) == inputs.Length;
+    }
+
+    private static bool InjectWinTap(uint virtualKeyCode)
+    {
+        var inputs = new[]
+        {
+            CreateKeyboardInput(virtualKeyCode, keyUp: false),
+            CreateKeyboardInput(virtualKeyCode, keyUp: true)
+        };
+        return NativeMethods.SendInput(
+            (uint)inputs.Length,
+            inputs,
+            Marshal.SizeOf<NativeInput>()) == inputs.Length;
+    }
+
+    private static bool InjectWinKey(uint virtualKeyCode, bool keyUp)
+    {
+        var inputs = new[] { CreateKeyboardInput(virtualKeyCode, keyUp) };
+        return NativeMethods.SendInput(1, inputs, Marshal.SizeOf<NativeInput>()) == 1;
+    }
+
+    private static NativeInput CreateKeyboardInput(uint virtualKeyCode, bool keyUp) => new()
+    {
+        Type = NativeMethods.InputKeyboard,
+        Data = new NativeInputUnion
+        {
+            Keyboard = new NativeKeyboardInput
+            {
+                VirtualKeyCode = (ushort)virtualKeyCode,
+                Flags = (IsExtendedKey(virtualKeyCode) ? NativeMethods.KeyEventExtendedKey : 0)
+                    | (keyUp ? NativeMethods.KeyEventKeyUp : 0)
+            }
+        }
+    };
+
+    private static bool IsExtendedKey(uint virtualKeyCode) => virtualKeyCode is
+        0x21 or // Page Up
+        0x22 or // Page Down
+        0x23 or // End
+        0x24 or // Home
+        0x25 or // Left
+        0x26 or // Up
+        0x27 or // Right
+        0x28 or // Down
+        0x2D or // Insert
+        0x2E or // Delete
+        VkLeftWin or
+        VkRightWin or
+        VkRightControl or
+        VkRightMenu;
 
     private static HotKeyModifiers GetModifier(uint virtualKeyCode) => virtualKeyCode switch
     {

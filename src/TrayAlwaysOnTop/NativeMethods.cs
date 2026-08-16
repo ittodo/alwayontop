@@ -20,6 +20,10 @@ internal static class NativeMethods
     internal const int WmKeyUp = 0x0101;
     internal const int WmSysKeyDown = 0x0104;
     internal const int WmSysKeyUp = 0x0105;
+    internal const uint LlkhfInjected = 0x00000010;
+    internal const uint InputKeyboard = 1;
+    internal const uint KeyEventExtendedKey = 0x0001;
+    internal const uint KeyEventKeyUp = 0x0002;
     internal const int WmHotKey = 0x0312;
     internal const int GwlExStyle = -20;
     internal const long WsExTopmost = 0x00000008L;
@@ -52,6 +56,12 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern nint GetModuleHandleW(string? moduleName);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern uint SendInput(
+        uint inputCount,
+        NativeInput[] inputs,
+        int inputSize);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -151,6 +161,44 @@ internal struct LowLevelKeyboardInput
 {
     public uint VirtualKeyCode;
     public uint ScanCode;
+    public uint Flags;
+    public uint Time;
+    public nuint ExtraInfo;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeInput
+{
+    public uint Type;
+    public NativeInputUnion Data;
+}
+
+[StructLayout(LayoutKind.Explicit)]
+internal struct NativeInputUnion
+{
+    [FieldOffset(0)]
+    public NativeKeyboardInput Keyboard;
+
+    [FieldOffset(0)]
+    public NativeMouseInput Mouse;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeKeyboardInput
+{
+    public ushort VirtualKeyCode;
+    public ushort ScanCode;
+    public uint Flags;
+    public uint Time;
+    public nuint ExtraInfo;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeMouseInput
+{
+    public int X;
+    public int Y;
+    public uint MouseData;
     public uint Flags;
     public uint Time;
     public nuint ExtraInfo;

@@ -23,6 +23,12 @@ internal static class Program
 
         if (args.Contains("--hook-smoke-test", StringComparer.OrdinalIgnoreCase))
         {
+            if (!WinKeyGestureStateSmokeTest())
+            {
+                Environment.ExitCode = 3;
+                return;
+            }
+
             ApplicationConfiguration.Initialize();
             var settings = new AppSettings();
             using var overlayService = new GlobalModifierOverlayService(
@@ -52,5 +58,58 @@ internal static class Program
         ApplicationConfiguration.Initialize();
 
         Application.Run(new TrayApplicationContext());
+    }
+
+    private static bool WinKeyGestureStateSmokeTest()
+    {
+        const uint leftWin = 0x5B;
+        const int threshold = 420;
+        var expectedNativeInputSize = nint.Size == 8 ? 40 : 28;
+        if (System.Runtime.InteropServices.Marshal.SizeOf<NativeInput>() != expectedNativeInputSize)
+        {
+            return false;
+        }
+
+        var shortTap = new WinKeyGestureTracker();
+        shortTap.Press(leftWin, 1000, combinedWithOtherModifier: false);
+        if (shortTap.Release(leftWin, 1100, threshold) != WinKeyReleaseAction.InjectTap)
+        {
+            return false;
+        }
+
+        var longPress = new WinKeyGestureTracker();
+        longPress.Press(leftWin, 1000, combinedWithOtherModifier: false);
+        if (longPress.Release(leftWin, 1500, threshold) != WinKeyReleaseAction.Suppress)
+        {
+            return false;
+        }
+
+        var shortcut = new WinKeyGestureTracker();
+        shortcut.Press(leftWin, 1000, combinedWithOtherModifier: false);
+        if (shortcut.DeliverForShortcut().Count != 1
+            || shortcut.Release(leftWin, 1100, threshold) != WinKeyReleaseAction.PassThrough)
+        {
+            return false;
+        }
+
+        var combined = new WinKeyGestureTracker();
+        combined.Press(leftWin, 1000, combinedWithOtherModifier: true);
+        if (combined.Release(leftWin, 1100, threshold) != WinKeyReleaseAction.Suppress)
+        {
+            return false;
+        }
+
+        var modifierAddedLater = new WinKeyGestureTracker();
+        modifierAddedLater.Press(leftWin, 1000, combinedWithOtherModifier: false);
+        modifierAddedLater.MarkOtherModifierActivity();
+        if (modifierAddedLater.Release(leftWin, 1100, threshold) != WinKeyReleaseAction.Suppress)
+        {
+            return false;
+        }
+
+        var overlayShown = new WinKeyGestureTracker();
+        overlayShown.Press(leftWin, 1000, combinedWithOtherModifier: false);
+        overlayShown.MarkLongPress();
+        return overlayShown.Release(leftWin, 1100, threshold) == WinKeyReleaseAction.Suppress;
     }
 }
