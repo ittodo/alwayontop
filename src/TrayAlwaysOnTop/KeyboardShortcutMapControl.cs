@@ -7,7 +7,8 @@ internal enum ShortcutVisualKind
     WindowsDefault,
     Unavailable,
     ThisApp,
-    VsCode
+    VsCode,
+    WindowsTerminal
 }
 
 internal sealed record KeyboardShortcutVisual(
@@ -231,6 +232,8 @@ internal sealed class KeyboardShortcutMapControl : Control
         ShortcutVisualKind.WindowsDefault => Color.FromArgb(25, 103, 210),
         ShortcutVisualKind.Unavailable => Color.FromArgb(190, 55, 55),
         ShortcutVisualKind.ThisApp => Color.FromArgb(16, 135, 87),
+        ShortcutVisualKind.VsCode => Color.FromArgb(133, 76, 204),
+        ShortcutVisualKind.WindowsTerminal => Color.FromArgb(211, 126, 24),
         _ => Color.Gray
     };
 

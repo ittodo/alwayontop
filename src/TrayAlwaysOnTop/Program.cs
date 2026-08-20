@@ -93,6 +93,24 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--terminal-live-test", StringComparer.OrdinalIgnoreCase))
+        {
+            var terminalShortcuts = new WindowsTerminalShortcutService().GetShortcuts();
+            Environment.ExitCode = terminalShortcuts.Count >= 4
+                && terminalShortcuts.Any(shortcut => shortcut.Modifiers == HotKeyModifiers.Control
+                    && shortcut.Key == Keys.C
+                    && shortcut.Description == "복사")
+                && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Control | HotKeyModifiers.Shift)
+                    && shortcut.Key == Keys.F
+                    && shortcut.Description == "검색")
+                && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Alt | HotKeyModifiers.Shift)
+                    && shortcut.Key == Keys.D
+                    && shortcut.Description == "현재 창 자동 분할")
+                    ? 0
+                    : 7;
+            return;
+        }
+
         using var singleInstance = new Mutex(true, "Local\\TrayAlwaysOnTop.SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
         {

@@ -68,7 +68,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
             .Where(shortcut => NormalizeModifiers(shortcut.Modifiers) == _modifiers)
             .Select(shortcut => new ModifierShortcutHint(
                 shortcut.Key,
-                $"VS Code · {shortcut.Description}",
+                $"{shortcut.Source} · {shortcut.Description}",
                 shortcut.Kind)));
 
         if (appHotKeyRegistered && NormalizeModifiers(settings.Modifiers) == _modifiers)
@@ -186,6 +186,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
         {
             ShortcutVisualKind.ThisApp => Color.FromArgb(39, 190, 124),
             ShortcutVisualKind.VsCode => Color.FromArgb(167, 112, 239),
+            ShortcutVisualKind.WindowsTerminal => Color.FromArgb(235, 158, 52),
             _ => Color.FromArgb(65, 143, 240)
         };
         using var path = CreateRoundedRectangle(keyBounds, 6f);

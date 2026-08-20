@@ -66,7 +66,7 @@ internal sealed class HotKeyDiagnosticsForm : Form
         var keyboard = new KeyboardShortcutMapControl { Dock = DockStyle.Fill };
         var list = CreateListView();
         list.Columns.Add("단축키", 230);
-        list.Columns.Add("현재 VS Code 기능", 620);
+        list.Columns.Add("현재 앱 기능", 620);
         var visuals = shortcuts
             .Select(shortcut => new KeyboardShortcutVisual(
                 shortcut.Modifiers,
@@ -81,7 +81,7 @@ internal sealed class HotKeyDiagnosticsForm : Form
         SelectFirstItem(list);
         return CreateTabPage(
             "현재 앱",
-            $"{status ?? "VS Code 연동 상태를 확인할 수 없습니다."} · 현재 활성 VS Code 컨텍스트에서 확실한 단축키 {shortcuts.Count}개",
+            $"{status ?? "현재 앱 단축키 상태를 확인할 수 없습니다."} · 확인된 단축키 {shortcuts.Count}개",
             keyboard,
             list);
     }

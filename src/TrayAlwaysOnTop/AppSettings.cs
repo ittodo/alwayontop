@@ -16,6 +16,8 @@ internal sealed class AppSettings
 
     public bool ShowVsCodeShortcuts { get; set; } = true;
 
+    public bool ShowWindowsTerminalShortcuts { get; set; } = true;
+
     public bool StartWithWindows { get; set; } = true;
 
     public bool VsCodeIntegrationPromptShown { get; set; }
@@ -29,6 +31,7 @@ internal sealed class AppSettings
         ShowNotifications = ShowNotifications,
         ShowGlobalShortcutOverlay = ShowGlobalShortcutOverlay,
         ShowVsCodeShortcuts = ShowVsCodeShortcuts,
+        ShowWindowsTerminalShortcuts = ShowWindowsTerminalShortcuts,
         StartWithWindows = StartWithWindows,
         VsCodeIntegrationPromptShown = VsCodeIntegrationPromptShown
     };

@@ -6,6 +6,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly HotKeyService _hotKeyService = new();
     private readonly UpdateService _updateService = new();
     private readonly VsCodeIntegrationService _vsCodeIntegrationService = new();
+    private readonly WindowsTerminalShortcutService _windowsTerminalShortcutService = new();
     private readonly GlobalModifierOverlayService _modifierOverlayService;
     private readonly WindowManager _windowManager;
     private readonly NotifyIcon _notifyIcon;
@@ -80,9 +81,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _modifierOverlayService = new GlobalModifierOverlayService(
             () => _settings.Copy(),
             () => _hotKeyService.IsRegistered,
-            () => _settings.ShowVsCodeShortcuts
-                ? _vsCodeIntegrationService.GetForegroundShortcuts()
-                : []);
+            GetForegroundContextualShortcuts);
         if (!_modifierOverlayService.TrySetEnabled(_settings.ShowGlobalShortcutOverlay, out var overlayError))
         {
             ShowBalloon(
@@ -364,12 +363,45 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowHotKeyDiagnostics()
     {
+        var lastWindow = _windowManager.GetLastExternalWindowInfo();
+        IReadOnlyList<ContextualShortcut> shortcuts;
+        string status;
+        if (_settings.ShowWindowsTerminalShortcuts
+            && string.Equals(lastWindow?.ProcessName, "WindowsTerminal", StringComparison.OrdinalIgnoreCase))
+        {
+            shortcuts = _windowsTerminalShortcutService.GetShortcuts();
+            status = _windowsTerminalShortcutService.StatusText;
+        }
+        else
+        {
+            shortcuts = _settings.ShowVsCodeShortcuts
+                ? _vsCodeIntegrationService.GetLastActiveShortcuts()
+                : [];
+            status = _vsCodeIntegrationService.StatusText;
+        }
+
         using var form = new HotKeyDiagnosticsForm(
             _settings,
             _hotKeyService.IsRegistered,
-            _vsCodeIntegrationService.GetLastActiveShortcuts(),
-            _vsCodeIntegrationService.StatusText);
+            shortcuts,
+            status);
         form.ShowDialog();
+    }
+
+    private IReadOnlyList<ContextualShortcut> GetForegroundContextualShortcuts()
+    {
+        var shortcuts = new List<ContextualShortcut>();
+        if (_settings.ShowVsCodeShortcuts)
+        {
+            shortcuts.AddRange(_vsCodeIntegrationService.GetForegroundShortcuts());
+        }
+
+        if (_settings.ShowWindowsTerminalShortcuts)
+        {
+            shortcuts.AddRange(_windowsTerminalShortcutService.GetForegroundShortcuts());
+        }
+
+        return shortcuts;
     }
 
     private async Task ShowVsCodeIntegrationAsync()
