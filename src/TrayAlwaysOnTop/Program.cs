@@ -111,6 +111,12 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--window-filter-smoke-test", StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = WindowFilterSmokeTest() ? 0 : 8;
+            return;
+        }
+
         using var singleInstance = new Mutex(true, "Local\\TrayAlwaysOnTop.SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
         {
@@ -217,5 +223,17 @@ internal static class Program
         {
             return false;
         }
+    }
+
+    private static bool WindowFilterSmokeTest()
+    {
+        return WindowManager.IsProtectedShellWindow("Shell_TrayWnd", "explorer")
+            && WindowManager.IsProtectedShellWindow("Shell_SecondaryTrayWnd", "explorer")
+            && WindowManager.IsProtectedShellWindow("NotifyIconOverflowWindow", "explorer")
+            && WindowManager.IsProtectedShellWindow("TopLevelWindowForOverflowXamlIsland", "explorer")
+            && WindowManager.IsProtectedShellWindow("Windows.UI.Core.CoreWindow", "ShellExperienceHost")
+            && WindowManager.IsProtectedShellWindow("Windows.UI.Core.CoreWindow", "StartMenuExperienceHost")
+            && !WindowManager.IsProtectedShellWindow("CabinetWClass", "explorer")
+            && !WindowManager.IsProtectedShellWindow("Chrome_WidgetWin_1", "chrome");
     }
 }

@@ -7,6 +7,25 @@ namespace TrayAlwaysOnTop;
 
 internal sealed class WindowManager : IDisposable
 {
+    private static readonly HashSet<string> ProtectedShellWindowClasses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Progman",
+        "WorkerW",
+        "Shell_TrayWnd",
+        "Shell_SecondaryTrayWnd",
+        "NotifyIconOverflowWindow",
+        "TopLevelWindowForOverflowXamlIsland"
+    };
+
+    private static readonly HashSet<string> ProtectedShellProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ShellExperienceHost",
+        "StartMenuExperienceHost",
+        "SearchApp",
+        "SearchHost",
+        "TextInputHost"
+    };
+
     private readonly uint _currentProcessId = (uint)Environment.ProcessId;
     private readonly HashSet<nint> _managedPins = [];
     private readonly Dictionary<nint, BorderOverlay> _overlays = [];
@@ -140,7 +159,29 @@ internal sealed class WindowManager : IDisposable
     {
         foreach (var handle in _managedPins.ToArray())
         {
-            if (!NativeMethods.IsWindow(handle) || !IsTopmost(handle))
+            if (!NativeMethods.IsWindow(handle))
+            {
+                _managedPins.Remove(handle);
+                RemoveOverlay(handle);
+                continue;
+            }
+
+            if (!IsCandidate(handle))
+            {
+                NativeMethods.SetWindowPos(
+                    handle,
+                    NativeMethods.HwndNoTopmost,
+                    0,
+                    0,
+                    0,
+                    0,
+                    NativeMethods.SwpNoMove | NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate);
+                _managedPins.Remove(handle);
+                RemoveOverlay(handle);
+                continue;
+            }
+
+            if (!IsTopmost(handle))
             {
                 _managedPins.Remove(handle);
                 RemoveOverlay(handle);
@@ -228,7 +269,7 @@ internal sealed class WindowManager : IDisposable
 
         var className = new StringBuilder(128);
         NativeMethods.GetClassNameW(handle, className, className.Capacity);
-        if (className.ToString() is "Progman" or "WorkerW" or "Shell_TrayWnd")
+        if (IsProtectedShellWindow(className.ToString(), GetProcessName(processId)))
         {
             return false;
         }
@@ -236,6 +277,16 @@ internal sealed class WindowManager : IDisposable
         var cloaked = 0;
         var result = NativeMethods.DwmGetWindowAttribute(handle, NativeMethods.DwmwaCloaked, out cloaked, sizeof(int));
         return result != 0 || cloaked == 0;
+    }
+
+    internal static bool IsProtectedShellWindow(string className, string processName)
+    {
+        if (ProtectedShellWindowClasses.Contains(className))
+        {
+            return true;
+        }
+
+        return ProtectedShellProcesses.Contains(processName);
     }
 
     private static nint Normalize(nint handle)
