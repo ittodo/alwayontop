@@ -30,7 +30,7 @@ PowerToys의 **Always on Top** 핵심 동작을 작은 Windows 트레이 앱으�
 
 연동 정보는 현재 사용자만 접근할 수 있는 Windows 로컬 파이프로 전달되며 인터넷으로 전송되지 않습니다. 문서 내용은 읽거나 전달하지 않습니다. VS Code의 공개 API로 적용 여부를 확정할 수 없는 `when` 조건은 잘못된 안내를 막기 위해 목록에서 제외합니다.
 
-Windows Terminal은 별도 확장을 설치하지 않습니다. Store·일반 설치·Preview 순서로 현재 사용자의 `settings.json`을 찾아 `keybindings`와 기존 `actions` 형식을 모두 읽으며, 설정이 변경되면 다음 팝업부터 자동 반영합니다.
+Windows Terminal은 별도 확장을 설치하지 않습니다. Store·일반 설치·Preview 순서로 현재 사용자의 `settings.json`을 찾아 `keybindings`와 기존 `actions` 형식을 모두 읽으며, 설정이 변경되면 다음 팝업부터 자동 반영합니다. 기본 창 분할 키 `Alt + Shift + D`, `Alt + Shift + -`, `Alt + Shift + +`도 사용자 설정과 병합해 표시합니다.
 
 관리자 권한으로 실행된 프로그램의 창은 Windows 보안 경계 때문에 일반 권한으로 실행한 이 앱에서 변경하지 못할 수 있습니다. 그런 창을 제어하려면 이 앱도 관리자 권한으로 실행해야 합니다.
 

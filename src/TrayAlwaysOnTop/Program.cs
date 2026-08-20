@@ -106,6 +106,12 @@ internal static class Program
                 && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Alt | HotKeyModifiers.Shift)
                     && shortcut.Key == Keys.D
                     && shortcut.Description == "현재 창 자동 분할")
+                && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Alt | HotKeyModifiers.Shift)
+                    && shortcut.Key == Keys.OemMinus
+                    && shortcut.Description == "현재 창 아래로 분할")
+                && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Alt | HotKeyModifiers.Shift)
+                    && shortcut.Key == Keys.Oemplus
+                    && shortcut.Description == "현재 창 오른쪽으로 분할")
                     ? 0
                     : 7;
             return;

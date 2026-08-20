@@ -103,6 +103,8 @@ internal static class VsCodeKeyGestureParser
 
         key = value switch
         {
+            "plus" or "equal" or "equals" => Keys.Oemplus,
+            "minus" => Keys.OemMinus,
             "escape" or "esc" => Keys.Escape,
             "tab" => Keys.Tab,
             "space" => Keys.Space,

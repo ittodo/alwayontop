@@ -5,6 +5,13 @@ namespace TrayAlwaysOnTop;
 
 internal sealed class WindowsTerminalShortcutService
 {
+    private static readonly (string Keys, string Action)[] DefaultBindings =
+    [
+        ("alt+shift+d", "Terminal.DuplicatePaneAuto"),
+        ("alt+shift+-", "Terminal.DuplicatePaneDown"),
+        ("alt+shift+plus", "Terminal.DuplicatePaneRight")
+    ];
+
     private static readonly JsonDocumentOptions JsonOptions = new()
     {
         AllowTrailingCommas = true,
@@ -18,6 +25,8 @@ internal sealed class WindowsTerminalShortcutService
             ["Terminal.PasteFromClipboard"] = "붙여넣기",
             ["Terminal.FindText"] = "검색",
             ["Terminal.DuplicatePaneAuto"] = "현재 창 자동 분할",
+            ["Terminal.DuplicatePaneDown"] = "현재 창 아래로 분할",
+            ["Terminal.DuplicatePaneRight"] = "현재 창 오른쪽으로 분할",
             ["Terminal.NewTab"] = "새 탭 열기",
             ["Terminal.NewWindow"] = "새 창 열기",
             ["Terminal.ClosePane"] = "현재 창 닫기",
@@ -76,11 +85,16 @@ internal sealed class WindowsTerminalShortcutService
             }
 
             using var document = JsonDocument.Parse(File.ReadAllText(_settingsPath), JsonOptions);
-            var shortcuts = new List<ContextualShortcut>();
+            var shortcuts = new Dictionary<(HotKeyModifiers Modifiers, Keys Key), ContextualShortcut>();
+            foreach (var (keys, action) in DefaultBindings)
+            {
+                ApplyShortcut(keys, action, shortcuts);
+            }
+
             AddBindings(document.RootElement, "keybindings", shortcuts);
             AddBindings(document.RootElement, "actions", shortcuts);
-            _cached = shortcuts
-                .DistinctBy(shortcut => (shortcut.Modifiers, shortcut.Key, shortcut.Description))
+            _cached = shortcuts.Values
+                .OrderBy(shortcut => shortcut.Shortcut, StringComparer.CurrentCultureIgnoreCase)
                 .ToArray();
             _lastWriteUtc = file.LastWriteTimeUtc;
             _lastLength = file.Length;
@@ -96,7 +110,7 @@ internal sealed class WindowsTerminalShortcutService
     private static void AddBindings(
         JsonElement root,
         string propertyName,
-        ICollection<ContextualShortcut> shortcuts)
+        IDictionary<(HotKeyModifiers Modifiers, Keys Key), ContextualShortcut> shortcuts)
     {
         if (!root.TryGetProperty(propertyName, out var bindings)
             || bindings.ValueKind != JsonValueKind.Array)
@@ -107,7 +121,6 @@ internal sealed class WindowsTerminalShortcutService
         foreach (var binding in bindings.EnumerateArray())
         {
             if (!TryGetAction(binding, out var action)
-                || string.Equals(action, "unbound", StringComparison.OrdinalIgnoreCase)
                 || !binding.TryGetProperty("keys", out var keys))
             {
                 continue;
@@ -115,7 +128,7 @@ internal sealed class WindowsTerminalShortcutService
 
             if (keys.ValueKind == JsonValueKind.String)
             {
-                AddShortcut(keys.GetString(), action, shortcuts);
+                ApplyShortcut(keys.GetString(), action, shortcuts);
             }
             else if (keys.ValueKind == JsonValueKind.Array)
             {
@@ -123,7 +136,7 @@ internal sealed class WindowsTerminalShortcutService
                 {
                     if (key.ValueKind == JsonValueKind.String)
                     {
-                        AddShortcut(key.GetString(), action, shortcuts);
+                        ApplyShortcut(key.GetString(), action, shortcuts);
                     }
                 }
             }
@@ -158,14 +171,21 @@ internal sealed class WindowsTerminalShortcutService
         return !string.IsNullOrWhiteSpace(action);
     }
 
-    private static void AddShortcut(
+    private static void ApplyShortcut(
         string? gesture,
         string action,
-        ICollection<ContextualShortcut> shortcuts)
+        IDictionary<(HotKeyModifiers Modifiers, Keys Key), ContextualShortcut> shortcuts)
     {
         if (gesture is null
             || !VsCodeKeyGestureParser.TryParse(gesture, out var modifiers, out var key, out var remaining))
         {
+            return;
+        }
+
+        var shortcutKey = (modifiers, key);
+        if (string.Equals(action, "unbound", StringComparison.OrdinalIgnoreCase))
+        {
+            shortcuts.Remove(shortcutKey);
             return;
         }
 
@@ -175,13 +195,13 @@ internal sealed class WindowsTerminalShortcutService
             description += $" · 다음 키: {remaining}";
         }
 
-        shortcuts.Add(new ContextualShortcut(
+        shortcuts[shortcutKey] = new ContextualShortcut(
             modifiers,
             key,
             HotKeyFormatter.Format(modifiers, key),
             description,
             ShortcutVisualKind.WindowsTerminal,
-            "Terminal"));
+            "Terminal");
     }
 
     private static string GetActionName(string action)
