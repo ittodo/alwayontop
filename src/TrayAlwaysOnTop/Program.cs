@@ -96,7 +96,7 @@ internal static class Program
         if (args.Contains("--terminal-live-test", StringComparer.OrdinalIgnoreCase))
         {
             var terminalShortcuts = new WindowsTerminalShortcutService().GetShortcuts();
-            Environment.ExitCode = terminalShortcuts.Count >= 4
+            Environment.ExitCode = terminalShortcuts.Count >= 50
                 && terminalShortcuts.Any(shortcut => shortcut.Modifiers == HotKeyModifiers.Control
                     && shortcut.Key == Keys.C
                     && shortcut.Description == "복사")
@@ -112,6 +112,9 @@ internal static class Program
                 && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Alt | HotKeyModifiers.Shift)
                     && shortcut.Key == Keys.Oemplus
                     && shortcut.Description == "현재 창 오른쪽으로 분할")
+                && terminalShortcuts.Any(shortcut => shortcut.Modifiers == (HotKeyModifiers.Control | HotKeyModifiers.Shift)
+                    && shortcut.Key == Keys.W
+                    && shortcut.Description == "현재 패널·탭 닫기")
                     ? 0
                     : 7;
             return;
