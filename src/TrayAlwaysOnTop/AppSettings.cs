@@ -14,7 +14,11 @@ internal sealed class AppSettings
 
     public bool ShowGlobalShortcutOverlay { get; set; } = true;
 
+    public bool ShowVsCodeShortcuts { get; set; } = true;
+
     public bool StartWithWindows { get; set; } = true;
+
+    public bool VsCodeIntegrationPromptShown { get; set; }
 
     public AppSettings Copy() => new()
     {
@@ -24,6 +28,8 @@ internal sealed class AppSettings
         ShowPinToggle = ShowPinToggle,
         ShowNotifications = ShowNotifications,
         ShowGlobalShortcutOverlay = ShowGlobalShortcutOverlay,
-        StartWithWindows = StartWithWindows
+        ShowVsCodeShortcuts = ShowVsCodeShortcuts,
+        StartWithWindows = StartWithWindows,
+        VsCodeIntegrationPromptShown = VsCodeIntegrationPromptShown
     };
 }

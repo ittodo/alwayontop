@@ -11,6 +11,7 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _showPinToggle = new() { Text = "고정된 창에 클릭 가능한 핀 토글 표시", AutoSize = true };
     private readonly CheckBox _showNotifications = new() { Text = "고정/해제 알림 표시", AutoSize = true };
     private readonly CheckBox _showGlobalShortcutOverlay = new() { Text = "보조키를 누르면 화면 중앙에 단축키 안내 표시", AutoSize = true };
+    private readonly CheckBox _showVsCodeShortcuts = new() { Text = "VS Code의 현재 컨텍스트 단축키 함께 표시", AutoSize = true };
     private readonly CheckBox _startWithWindows = new() { Text = "Windows 시작 시 자동 실행", AutoSize = true };
 
     public AppSettings Result { get; private set; }
@@ -21,7 +22,7 @@ internal sealed class SettingsForm : Form
 
         Text = "Tray Always On Top 설정";
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(430, 335);
+        ClientSize = new Size(430, 365);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -47,6 +48,7 @@ internal sealed class SettingsForm : Form
         _showPinToggle.Checked = settings.ShowPinToggle;
         _showNotifications.Checked = settings.ShowNotifications;
         _showGlobalShortcutOverlay.Checked = settings.ShowGlobalShortcutOverlay;
+        _showVsCodeShortcuts.Checked = settings.ShowVsCodeShortcuts;
         _startWithWindows.Checked = settings.StartWithWindows;
 
         var modifiers = new FlowLayoutPanel
@@ -76,8 +78,9 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(18),
             ColumnCount = 1,
-            RowCount = 9
+            RowCount = 10
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -100,6 +103,7 @@ internal sealed class SettingsForm : Form
         layout.Controls.Add(_showPinToggle);
         layout.Controls.Add(_showNotifications);
         layout.Controls.Add(_showGlobalShortcutOverlay);
+        layout.Controls.Add(_showVsCodeShortcuts);
         layout.Controls.Add(_startWithWindows);
         layout.Controls.Add(new Label
         {
@@ -138,6 +142,7 @@ internal sealed class SettingsForm : Form
             ShowPinToggle = _showPinToggle.Checked,
             ShowNotifications = _showNotifications.Checked,
             ShowGlobalShortcutOverlay = _showGlobalShortcutOverlay.Checked,
+            ShowVsCodeShortcuts = _showVsCodeShortcuts.Checked,
             StartWithWindows = _startWithWindows.Checked
         };
         DialogResult = DialogResult.OK;

@@ -19,6 +19,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
 
     private readonly Func<AppSettings> _getSettings;
     private readonly Func<bool> _isAppHotKeyRegistered;
+    private readonly Func<IReadOnlyList<ContextualShortcut>> _getContextualShortcuts;
     private readonly ModifierShortcutOverlayForm _overlay = new();
     private readonly System.Windows.Forms.Timer _showTimer = new() { Interval = 420 };
     private readonly HashSet<uint> _pressedModifierKeys = [];
@@ -29,10 +30,12 @@ internal sealed class GlobalModifierOverlayService : IDisposable
 
     public GlobalModifierOverlayService(
         Func<AppSettings> getSettings,
-        Func<bool> isAppHotKeyRegistered)
+        Func<bool> isAppHotKeyRegistered,
+        Func<IReadOnlyList<ContextualShortcut>>? getContextualShortcuts = null)
     {
         _getSettings = getSettings;
         _isAppHotKeyRegistered = isAppHotKeyRegistered;
+        _getContextualShortcuts = getContextualShortcuts ?? (() => []);
         _hookCallback = HookCallback;
         _showTimer.Tick += (_, _) => ShowPendingOverlay();
     }
@@ -205,7 +208,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
 
         if (_overlay.Visible)
         {
-            _overlay.ShowFor(modifiers, _getSettings(), _isAppHotKeyRegistered());
+            _overlay.ShowFor(modifiers, _getSettings(), _isAppHotKeyRegistered(), _getContextualShortcuts());
             return;
         }
 
@@ -224,7 +227,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
                 _winKeyTracker.MarkLongPress();
             }
 
-            _overlay.ShowFor(modifiers, _getSettings(), _isAppHotKeyRegistered());
+            _overlay.ShowFor(modifiers, _getSettings(), _isAppHotKeyRegistered(), _getContextualShortcuts());
         }
     }
 

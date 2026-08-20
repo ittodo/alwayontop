@@ -5,6 +5,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly SettingsStore _settingsStore = new();
     private readonly HotKeyService _hotKeyService = new();
     private readonly UpdateService _updateService = new();
+    private readonly VsCodeIntegrationService _vsCodeIntegrationService = new();
     private readonly GlobalModifierOverlayService _modifierOverlayService;
     private readonly WindowManager _windowManager;
     private readonly NotifyIcon _notifyIcon;
@@ -12,9 +13,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _currentWindowItem = new();
     private readonly ToolStripMenuItem _windowListItem = new("열린 창 선택");
     private readonly ToolStripMenuItem _hotKeyDiagnosticsItem = new("전역 단축키 목록...");
+    private readonly ToolStripMenuItem _vsCodeIntegrationItem = new("VS Code 연동...");
     private readonly ToolStripMenuItem _updateItem = new("업데이트 확인...");
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly System.Windows.Forms.Timer _startupUpdateTimer = new() { Interval = 5000 };
+    private readonly System.Windows.Forms.Timer _integrationPromptTimer = new() { Interval = 9000 };
     private readonly CancellationTokenSource _shutdown = new();
     private AppSettings _settings;
     private bool _updateCheckRunning;
@@ -33,6 +36,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var settingsItem = new ToolStripMenuItem("설정...");
         settingsItem.Click += (_, _) => ShowSettings();
         _hotKeyDiagnosticsItem.Click += (_, _) => ShowHotKeyDiagnostics();
+        _vsCodeIntegrationItem.Click += async (_, _) => await ShowVsCodeIntegrationAsync();
         _updateItem.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
         var exitItem = new ToolStripMenuItem("종료");
         exitItem.Click += (_, _) => ExitThread();
@@ -43,6 +47,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(_windowListItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_hotKeyDiagnosticsItem);
+        _menu.Items.Add(_vsCodeIntegrationItem);
         _menu.Items.Add(_updateItem);
         _menu.Items.Add(settingsItem);
         _menu.Items.Add(exitItem);
@@ -74,7 +79,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _modifierOverlayService = new GlobalModifierOverlayService(
             () => _settings.Copy(),
-            () => _hotKeyService.IsRegistered);
+            () => _hotKeyService.IsRegistered,
+            () => _settings.ShowVsCodeShortcuts
+                ? _vsCodeIntegrationService.GetForegroundShortcuts()
+                : []);
         if (!_modifierOverlayService.TrySetEnabled(_settings.ShowGlobalShortcutOverlay, out var overlayError))
         {
             ShowBalloon(
@@ -103,6 +111,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupUpdateTimer.Start();
 
+        _integrationPromptTimer.Tick += (_, _) => ShowVsCodeIntegrationPrompt();
+        _integrationPromptTimer.Start();
+
         ShowBalloon(
             "Tray Always On Top 실행 중",
             $"{FormatHotKey(_settings)}를 눌러 현재 창을 고정하거나 해제하세요.",
@@ -121,9 +132,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _shutdown.Cancel();
         _startupUpdateTimer.Stop();
         _startupUpdateTimer.Dispose();
+        _integrationPromptTimer.Stop();
+        _integrationPromptTimer.Dispose();
         _timer.Stop();
         _timer.Dispose();
         _modifierOverlayService.Dispose();
+        _vsCodeIntegrationService.Dispose();
         _hotKeyService.Dispose();
         _windowManager.Dispose();
         _notifyIcon.Visible = false;
@@ -350,8 +364,86 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowHotKeyDiagnostics()
     {
-        using var form = new HotKeyDiagnosticsForm(_settings, _hotKeyService.IsRegistered);
+        using var form = new HotKeyDiagnosticsForm(
+            _settings,
+            _hotKeyService.IsRegistered,
+            _vsCodeIntegrationService.GetLastActiveShortcuts(),
+            _vsCodeIntegrationService.StatusText);
         form.ShowDialog();
+    }
+
+    private async Task ShowVsCodeIntegrationAsync()
+    {
+        if (_vsCodeIntegrationService.IsConnected)
+        {
+            var reinstall = MessageBox.Show(
+                "VS Code 연동이 정상적으로 연결되어 있습니다. 확장을 다시 설치할까요?",
+                "VS Code 연동",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+            if (reinstall != DialogResult.Yes)
+            {
+                return;
+            }
+        }
+        else
+        {
+            var install = MessageBox.Show(
+                "현재 VS Code 연동 확장이 연결되어 있지 않습니다. 지금 설치할까요?",
+                "VS Code 연동",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (install != DialogResult.Yes)
+            {
+                return;
+            }
+        }
+
+        _vsCodeIntegrationItem.Enabled = false;
+        try
+        {
+            var result = await VsCodeIntegrationInstaller.InstallAsync();
+            MessageBox.Show(
+                result.Message,
+                "VS Code 연동",
+                MessageBoxButtons.OK,
+                result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _vsCodeIntegrationItem.Enabled = true;
+        }
+    }
+
+    private void ShowVsCodeIntegrationPrompt()
+    {
+        _integrationPromptTimer.Stop();
+        if (_settings.VsCodeIntegrationPromptShown
+            || !VsCodeIntegrationInstaller.IsVsCodeInstalled
+            || _vsCodeIntegrationService.IsConnected)
+        {
+            return;
+        }
+
+        _settings.VsCodeIntegrationPromptShown = true;
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (IOException)
+        {
+            // The prompt remains non-blocking even when its one-time state cannot be saved.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The prompt remains non-blocking even when its one-time state cannot be saved.
+        }
+
+        ShowBalloon(
+            "VS Code 단축키 연동 가능",
+            "트레이 메뉴의 ‘VS Code 연동...’에서 현재 컨텍스트 단축키 기능을 설치할 수 있습니다.",
+            ToolTipIcon.Info,
+            force: true);
     }
 
     private void ShowBalloon(string title, string message, ToolTipIcon icon, bool force = false)

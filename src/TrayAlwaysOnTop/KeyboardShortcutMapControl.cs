@@ -6,7 +6,8 @@ internal enum ShortcutVisualKind
 {
     WindowsDefault,
     Unavailable,
-    ThisApp
+    ThisApp,
+    VsCode
 }
 
 internal sealed record KeyboardShortcutVisual(

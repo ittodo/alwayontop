@@ -11,6 +11,7 @@ $artifactRoot = Join-Path $projectRoot 'artifacts'
 $publishDirectory = Join-Path $artifactRoot "publish\$Runtime"
 $releaseDirectory = Join-Path $artifactRoot 'releases'
 $project = Join-Path $projectRoot 'src\TrayAlwaysOnTop\TrayAlwaysOnTop.csproj'
+$vsCodeExtension = Join-Path $projectRoot 'extensions\vscode'
 
 $resolvedRoot = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\') + '\'
 $resolvedArtifacts = [System.IO.Path]::GetFullPath($artifactRoot).TrimEnd('\') + '\'
@@ -23,6 +24,17 @@ if (Test-Path -LiteralPath $publishDirectory) {
 }
 New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
+
+Push-Location $vsCodeExtension
+try {
+    npm ci
+    if ($LASTEXITCODE -ne 0) { throw 'VS Code extension dependency restore failed.' }
+    npm run package
+    if ($LASTEXITCODE -ne 0) { throw 'VS Code extension packaging failed.' }
+}
+finally {
+    Pop-Location
+}
 
 dotnet publish $project `
     --configuration Release `

@@ -12,9 +12,14 @@ internal sealed class ModifierShortcutOverlayForm : Form
     private const int HeaderHeight = 72;
     private const int RowHeight = 38;
     private const int ColumnWidth = 300;
+    private const int MaximumVisibleRows = 8;
     private IReadOnlyList<ModifierShortcutHint> _hints = [];
     private HotKeyModifiers _modifiers;
     private int _columns = 1;
+    private int _rows;
+    private float _scrollOffset;
+    private int _scrollDelayTicks;
+    private readonly System.Windows.Forms.Timer _scrollTimer = new() { Interval = 33 };
 
     public ModifierShortcutOverlayForm()
     {
@@ -26,6 +31,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
         Opacity = 0.96;
         DoubleBuffered = true;
         AccessibleName = "전역 보조키 단축키 안내";
+        _scrollTimer.Tick += (_, _) => AdvanceScroll();
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -46,7 +52,8 @@ internal sealed class ModifierShortcutOverlayForm : Form
     public void ShowFor(
         HotKeyModifiers modifiers,
         AppSettings settings,
-        bool appHotKeyRegistered)
+        bool appHotKeyRegistered,
+        IReadOnlyList<ContextualShortcut> contextualShortcuts)
     {
         _modifiers = NormalizeModifiers(modifiers);
         var hints = WindowsShortcutCatalog.Shortcuts
@@ -56,6 +63,13 @@ internal sealed class ModifierShortcutOverlayForm : Form
                 shortcut.Description,
                 ShortcutVisualKind.WindowsDefault))
             .ToList();
+
+        hints.InsertRange(0, contextualShortcuts
+            .Where(shortcut => NormalizeModifiers(shortcut.Modifiers) == _modifiers)
+            .Select(shortcut => new ModifierShortcutHint(
+                shortcut.Key,
+                $"VS Code · {shortcut.Description}",
+                shortcut.Kind)));
 
         if (appHotKeyRegistered && NormalizeModifiers(settings.Modifiers) == _modifiers)
         {
@@ -67,8 +81,10 @@ internal sealed class ModifierShortcutOverlayForm : Form
 
         _hints = hints;
         _columns = Math.Clamp((int)Math.Ceiling(Math.Max(1, hints.Count) / 8d), 1, 3);
-        var rows = Math.Max(1, (int)Math.Ceiling(Math.Max(1, hints.Count) / (double)_columns));
-        var desiredSize = new Size(_columns * ColumnWidth + 40, HeaderHeight + rows * RowHeight + 22);
+        _rows = Math.Max(1, (int)Math.Ceiling(Math.Max(1, hints.Count) / (double)_columns));
+        var desiredSize = new Size(
+            _columns * ColumnWidth + 40,
+            HeaderHeight + Math.Min(_rows, MaximumVisibleRows) * RowHeight + 22);
         var activeScreen = Screen.FromHandle(NativeMethods.GetForegroundWindow());
         var workingArea = activeScreen.WorkingArea;
         Size = new Size(
@@ -78,6 +94,8 @@ internal sealed class ModifierShortcutOverlayForm : Form
             workingArea.Left + (workingArea.Width - Width) / 2,
             workingArea.Top + (workingArea.Height - Height) / 2);
         UpdateRoundedRegion();
+        _scrollOffset = 0;
+        _scrollDelayTicks = 60;
         Invalidate();
 
         if (!Visible)
@@ -93,6 +111,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
             Width,
             Height,
             NativeMethods.SwpNoActivate);
+        _scrollTimer.Start();
     }
 
     public void HideOverlay()
@@ -101,6 +120,8 @@ internal sealed class ModifierShortcutOverlayForm : Form
         {
             Hide();
         }
+
+        _scrollTimer.Stop();
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)
@@ -138,12 +159,15 @@ internal sealed class ModifierShortcutOverlayForm : Form
         }
 
         var rowsPerColumn = (int)Math.Ceiling(_hints.Count / (double)_columns);
+        var contentState = graphics.Save();
+        graphics.SetClip(new Rectangle(0, HeaderHeight, Width, Height - HeaderHeight));
         for (var index = 0; index < _hints.Count; index++)
         {
             var column = index / rowsPerColumn;
             var row = index % rowsPerColumn;
-            DrawHint(graphics, _hints[index], column, row, rowFont, keyFont);
+            DrawHint(graphics, _hints[index], column, row, _scrollOffset, rowFont, keyFont);
         }
+        graphics.Restore(contentState);
     }
 
     private static void DrawHint(
@@ -151,15 +175,19 @@ internal sealed class ModifierShortcutOverlayForm : Form
         ModifierShortcutHint hint,
         int column,
         int row,
+        float scrollOffset,
         Font rowFont,
         Font keyFont)
     {
         var x = 20 + column * ColumnWidth;
-        var y = HeaderHeight + row * RowHeight + 4;
+        var y = HeaderHeight + row * RowHeight + 4 - (int)scrollOffset;
         var keyBounds = new Rectangle(x, y, 62, 29);
-        var accent = hint.Kind == ShortcutVisualKind.ThisApp
-            ? Color.FromArgb(39, 190, 124)
-            : Color.FromArgb(65, 143, 240);
+        var accent = hint.Kind switch
+        {
+            ShortcutVisualKind.ThisApp => Color.FromArgb(39, 190, 124),
+            ShortcutVisualKind.VsCode => Color.FromArgb(167, 112, 239),
+            _ => Color.FromArgb(65, 143, 240)
+        };
         using var path = CreateRoundedRectangle(keyBounds, 6f);
         using var keyBrush = new SolidBrush(Color.FromArgb(58, 64, 75));
         using var borderPen = new Pen(accent, 1.5f);
@@ -181,6 +209,41 @@ internal sealed class ModifierShortcutOverlayForm : Form
             descriptionBounds,
             Color.FromArgb(232, 235, 240),
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _scrollTimer.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private void AdvanceScroll()
+    {
+        var viewportHeight = Math.Max(0, Height - HeaderHeight - 22);
+        var maximumOffset = Math.Max(0, _rows * RowHeight - viewportHeight);
+        if (maximumOffset <= 0)
+        {
+            return;
+        }
+
+        if (_scrollDelayTicks > 0)
+        {
+            _scrollDelayTicks--;
+            return;
+        }
+
+        _scrollOffset += 0.66f;
+        if (_scrollOffset >= maximumOffset + RowHeight)
+        {
+            _scrollOffset = 0;
+            _scrollDelayTicks = 60;
+        }
+
+        Invalidate(new Rectangle(0, HeaderHeight, Width, Height - HeaderHeight));
     }
 
     private void UpdateRoundedRegion()

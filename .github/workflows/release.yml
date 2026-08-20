@@ -21,6 +21,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build VS Code integration extension
+        shell: pwsh
+        working-directory: .\extensions\vscode
+        run: |
+          New-Item -ItemType Directory -Path ..\..\artifacts -Force | Out-Null
+          npm ci
+          npm run package
+
       - name: Read and validate version
         id: version
         shell: pwsh

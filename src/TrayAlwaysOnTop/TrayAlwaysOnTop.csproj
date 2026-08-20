@@ -18,4 +18,12 @@
   <ItemGroup>
     <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\..\artifacts\TrayAlwaysOnTop-VSCode.vsix')">
+    <Content Include="..\..\artifacts\TrayAlwaysOnTop-VSCode.vsix">
+      <Link>Integrations\TrayAlwaysOnTop-VSCode.vsix</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

@@ -13,7 +13,11 @@ internal sealed class HotKeyDiagnosticsForm : Form
     private readonly ListView _unavailableList = CreateListView();
     private readonly KeyboardShortcutMapControl _unavailableKeyboard = new() { Dock = DockStyle.Fill };
 
-    public HotKeyDiagnosticsForm(AppSettings settings, bool appHotKeyRegistered)
+    public HotKeyDiagnosticsForm(
+        AppSettings settings,
+        bool appHotKeyRegistered,
+        IReadOnlyList<ContextualShortcut>? contextualShortcuts = null,
+        string? contextualStatus = null)
     {
         _settings = settings.Copy();
         _appHotKeyRegistered = appHotKeyRegistered;
@@ -24,6 +28,7 @@ internal sealed class HotKeyDiagnosticsForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
+        tabs.TabPages.Add(CreateContextualShortcutsPage(contextualShortcuts ?? [], contextualStatus));
         tabs.TabPages.Add(CreateWindowsShortcutsPage());
         tabs.TabPages.Add(CreateUnavailablePage());
         tabs.TabPages.Add(CreateThisAppPage());
@@ -52,6 +57,33 @@ internal sealed class HotKeyDiagnosticsForm : Form
         AcceptButton = closeButton;
         CancelButton = closeButton;
         Shown += async (_, _) => await ScanAsync();
+    }
+
+    private static TabPage CreateContextualShortcutsPage(
+        IReadOnlyList<ContextualShortcut> shortcuts,
+        string? status)
+    {
+        var keyboard = new KeyboardShortcutMapControl { Dock = DockStyle.Fill };
+        var list = CreateListView();
+        list.Columns.Add("단축키", 230);
+        list.Columns.Add("현재 VS Code 기능", 620);
+        var visuals = shortcuts
+            .Select(shortcut => new KeyboardShortcutVisual(
+                shortcut.Modifiers,
+                shortcut.Key,
+                shortcut.Shortcut,
+                shortcut.Description,
+                shortcut.Kind))
+            .ToArray();
+        PopulateList(list, visuals);
+        BindSelection(list, keyboard);
+        keyboard.SetShortcuts(visuals);
+        SelectFirstItem(list);
+        return CreateTabPage(
+            "현재 앱",
+            $"{status ?? "VS Code 연동 상태를 확인할 수 없습니다."} · 현재 활성 VS Code 컨텍스트에서 확실한 단축키 {shortcuts.Count}개",
+            keyboard,
+            list);
     }
 
     private TabPage CreateWindowsShortcutsPage()

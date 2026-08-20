@@ -1,0 +1,28 @@
+{
+  "name": "tray-always-on-top-shortcuts",
+  "displayName": "Tray Always On Top - Context Shortcuts",
+  "description": "Shares the active VS Code shortcut context with Tray Always On Top on this PC.",
+  "version": "1.0.0",
+  "publisher": "ittodo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ittodo/alwayontop.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "package": "vsce package --no-dependencies --out ../../artifacts/TrayAlwaysOnTop-VSCode.vsix"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.6.2"
+  }
+}
