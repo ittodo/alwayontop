@@ -63,6 +63,40 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--visualstudio-smoke-test", StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = VisualStudioIntegrationSmokeTest() ? 0 : 10;
+            return;
+        }
+
+        if (args.Contains("--visualstudio-discovery-test", StringComparer.OrdinalIgnoreCase))
+        {
+            var instances = VisualStudioIntegrationInstaller.GetInstalledInstances();
+            Environment.ExitCode = instances.Any(instance => instance.Version.StartsWith("17.", StringComparison.Ordinal))
+                && instances.Any(instance => instance.Version.StartsWith("18.", StringComparison.Ordinal))
+                ? 0
+                : 11;
+            return;
+        }
+
+        if (args.Contains("--visualstudio-live-test", StringComparer.OrdinalIgnoreCase))
+        {
+            using var integration = new VisualStudioIntegrationService();
+            Environment.ExitCode = SpinWait.SpinUntil(
+                () => integration.IsConnected && integration.ReceivedShortcutCount >= 20,
+                60000)
+                ? 0
+                : 13;
+            return;
+        }
+
+        if (args.Contains("--visualstudio-install-test", StringComparer.OrdinalIgnoreCase))
+        {
+            var installation = VisualStudioIntegrationInstaller.InstallAsync().GetAwaiter().GetResult();
+            Environment.ExitCode = installation.Success ? 0 : 12;
+            return;
+        }
+
         if (args.Contains("--vscode-install-test", StringComparer.OrdinalIgnoreCase))
         {
             var installation = VsCodeIntegrationInstaller.InstallAsync().GetAwaiter().GetResult();
@@ -238,6 +272,40 @@ internal static class Program
         {
             return false;
         }
+    }
+
+    private static bool VisualStudioIntegrationSmokeTest()
+    {
+        if (!VsCodeKeyGestureParser.TryParse("ctrl+k", out var modifiers, out var key, out _)
+            || modifiers != HotKeyModifiers.Control
+            || key != Keys.K)
+        {
+            return false;
+        }
+
+        var pipeName = $"TrayAlwaysOnTop.VisualStudio.Test.{Guid.NewGuid():N}";
+        using var service = new VisualStudioIntegrationService(pipeName);
+        try
+        {
+            using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.Out, PipeOptions.Asynchronous);
+            client.Connect(3000);
+            var message = $"{{\"protocolVersion\":1,\"app\":\"visualstudio\",\"visualStudioVersion\":\"17.14\",\"processId\":{Environment.ProcessId},\"windowActive\":true,\"context\":\"CSharp · Design\",\"shortcuts\":[{{\"key\":\"ctrl+k\",\"remainingChord\":\"ctrl+c\",\"command\":\"Edit.CommentSelection\",\"title\":\"선택 영역 주석 처리\",\"scope\":\"Text Editor\"}}]}}\n";
+            var bytes = Encoding.UTF8.GetBytes(message);
+            client.Write(bytes);
+            client.Flush();
+            if (!SpinWait.SpinUntil(() => service.IsConnected && service.ReceivedShortcutCount == 1, 3000))
+            {
+                return false;
+            }
+
+            var shortcut = service.GetLastActiveShortcuts().SingleOrDefault();
+            return shortcut is not null
+                && shortcut.Kind == ShortcutVisualKind.VisualStudio
+                && shortcut.RemainingChord == "ctrl+c"
+                && shortcut.Description.Contains("선택 영역 주석 처리", StringComparison.Ordinal);
+        }
+        catch (TimeoutException) { return false; }
+        catch (IOException) { return false; }
     }
 
     private static bool WindowFilterSmokeTest()

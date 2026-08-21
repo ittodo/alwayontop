@@ -16,11 +16,15 @@ internal sealed class AppSettings
 
     public bool ShowVsCodeShortcuts { get; set; } = true;
 
+    public bool ShowVisualStudioShortcuts { get; set; } = true;
+
     public bool ShowWindowsTerminalShortcuts { get; set; } = true;
 
     public bool StartWithWindows { get; set; } = true;
 
     public bool VsCodeIntegrationPromptShown { get; set; }
+
+    public bool VisualStudioIntegrationPromptShown { get; set; }
 
     public AppSettings Copy() => new()
     {
@@ -31,8 +35,10 @@ internal sealed class AppSettings
         ShowNotifications = ShowNotifications,
         ShowGlobalShortcutOverlay = ShowGlobalShortcutOverlay,
         ShowVsCodeShortcuts = ShowVsCodeShortcuts,
+        ShowVisualStudioShortcuts = ShowVisualStudioShortcuts,
         ShowWindowsTerminalShortcuts = ShowWindowsTerminalShortcuts,
         StartWithWindows = StartWithWindows,
-        VsCodeIntegrationPromptShown = VsCodeIntegrationPromptShown
+        VsCodeIntegrationPromptShown = VsCodeIntegrationPromptShown,
+        VisualStudioIntegrationPromptShown = VisualStudioIntegrationPromptShown
     };
 }

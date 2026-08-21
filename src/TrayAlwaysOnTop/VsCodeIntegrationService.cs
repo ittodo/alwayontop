@@ -211,7 +211,8 @@ internal sealed class VsCodeIntegrationService : IDisposable
             shortcut,
             description,
             ShortcutVisualKind.VsCode,
-            "VS Code");
+            "VS Code",
+            string.IsNullOrWhiteSpace(remaining) ? null : remaining);
     }
 
     private static string FormatRemainingChord(string chord)

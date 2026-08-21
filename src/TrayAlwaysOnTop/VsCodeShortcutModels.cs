@@ -20,4 +20,5 @@ internal sealed record ContextualShortcut(
     string Shortcut,
     string Description,
     ShortcutVisualKind Kind,
-    string Source);
+    string Source,
+    string? RemainingChord = null);

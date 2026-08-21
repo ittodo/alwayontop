@@ -6,6 +6,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly HotKeyService _hotKeyService = new();
     private readonly UpdateService _updateService = new();
     private readonly VsCodeIntegrationService _vsCodeIntegrationService = new();
+    private readonly VisualStudioIntegrationService _visualStudioIntegrationService = new();
     private readonly WindowsTerminalShortcutService _windowsTerminalShortcutService = new();
     private readonly GlobalModifierOverlayService _modifierOverlayService;
     private readonly WindowManager _windowManager;
@@ -15,6 +16,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _windowListItem = new("열린 창 선택");
     private readonly ToolStripMenuItem _hotKeyDiagnosticsItem = new("전역 단축키 목록...");
     private readonly ToolStripMenuItem _vsCodeIntegrationItem = new("VS Code 연동...");
+    private readonly ToolStripMenuItem _visualStudioIntegrationItem = new("Visual Studio 연동...");
     private readonly ToolStripMenuItem _updateItem = new("업데이트 확인...");
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly System.Windows.Forms.Timer _startupUpdateTimer = new() { Interval = 5000 };
@@ -38,6 +40,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         settingsItem.Click += (_, _) => ShowSettings();
         _hotKeyDiagnosticsItem.Click += (_, _) => ShowHotKeyDiagnostics();
         _vsCodeIntegrationItem.Click += async (_, _) => await ShowVsCodeIntegrationAsync();
+        _visualStudioIntegrationItem.Click += async (_, _) => await ShowVisualStudioIntegrationAsync();
         _updateItem.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
         var exitItem = new ToolStripMenuItem("종료");
         exitItem.Click += (_, _) => ExitThread();
@@ -49,6 +52,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_hotKeyDiagnosticsItem);
         _menu.Items.Add(_vsCodeIntegrationItem);
+        _menu.Items.Add(_visualStudioIntegrationItem);
         _menu.Items.Add(_updateItem);
         _menu.Items.Add(settingsItem);
         _menu.Items.Add(exitItem);
@@ -110,7 +114,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupUpdateTimer.Start();
 
-        _integrationPromptTimer.Tick += (_, _) => ShowVsCodeIntegrationPrompt();
+        _integrationPromptTimer.Tick += (_, _) =>
+        {
+            _integrationPromptTimer.Stop();
+            ShowVsCodeIntegrationPrompt();
+            ShowVisualStudioIntegrationPrompt();
+        };
         _integrationPromptTimer.Start();
 
         ShowBalloon(
@@ -137,6 +146,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Dispose();
         _modifierOverlayService.Dispose();
         _vsCodeIntegrationService.Dispose();
+        _visualStudioIntegrationService.Dispose();
         _hotKeyService.Dispose();
         _windowManager.Dispose();
         _notifyIcon.Visible = false;
@@ -372,12 +382,25 @@ internal sealed class TrayApplicationContext : ApplicationContext
             shortcuts = _windowsTerminalShortcutService.GetShortcuts();
             status = _windowsTerminalShortcutService.StatusText;
         }
+        else if (_settings.ShowVisualStudioShortcuts
+                 && string.Equals(lastWindow?.ProcessName, "devenv", StringComparison.OrdinalIgnoreCase))
+        {
+            shortcuts = _visualStudioIntegrationService.GetLastActiveShortcuts();
+            status = _visualStudioIntegrationService.StatusText;
+        }
         else
         {
-            shortcuts = _settings.ShowVsCodeShortcuts
-                ? _vsCodeIntegrationService.GetLastActiveShortcuts()
-                : [];
-            status = _vsCodeIntegrationService.StatusText;
+            var contextual = new List<ContextualShortcut>();
+            if (_settings.ShowVsCodeShortcuts)
+            {
+                contextual.AddRange(_vsCodeIntegrationService.GetLastActiveShortcuts());
+            }
+            if (_settings.ShowVisualStudioShortcuts)
+            {
+                contextual.AddRange(_visualStudioIntegrationService.GetLastActiveShortcuts());
+            }
+            shortcuts = contextual;
+            status = $"{_vsCodeIntegrationService.StatusText} · {_visualStudioIntegrationService.StatusText}";
         }
 
         using var form = new HotKeyDiagnosticsForm(
@@ -394,6 +417,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_settings.ShowVsCodeShortcuts)
         {
             shortcuts.AddRange(_vsCodeIntegrationService.GetForegroundShortcuts());
+        }
+
+        if (_settings.ShowVisualStudioShortcuts)
+        {
+            shortcuts.AddRange(_visualStudioIntegrationService.GetForegroundShortcuts());
         }
 
         if (_settings.ShowWindowsTerminalShortcuts)
@@ -447,9 +475,59 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private async Task ShowVisualStudioIntegrationAsync()
+    {
+        var instances = VisualStudioIntegrationInstaller.GetInstalledInstances();
+        if (instances.Count == 0)
+        {
+            MessageBox.Show(
+                "Visual Studio 2022 또는 2026을 찾지 못했습니다.",
+                "Visual Studio 연동",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        var connected = _visualStudioIntegrationService.GetConnectedVersions();
+        var instanceText = string.Join(
+            "\n",
+            instances.Select(instance =>
+            {
+                var major = Version.TryParse(instance.Version, out var version) ? version.Major : 0;
+                var productYear = major == 17 ? "2022" : major == 18 ? "2026" : instance.Version;
+                var state = connected.Contains(productYear, StringComparer.OrdinalIgnoreCase)
+                    ? "연결됨"
+                    : VisualStudioIntegrationInstaller.IsExtensionInstalled(instance) ? "설치됨" : "미설치";
+                return $"• {instance.DisplayName} ({productYear}) — {state}";
+            }));
+        var install = MessageBox.Show(
+            $"다음 Visual Studio에 현재 컨텍스트 단축키 확장을 설치합니다.\n\n{instanceText}\n\n계속할까요?",
+            "Visual Studio 연동",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (install != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _visualStudioIntegrationItem.Enabled = false;
+        try
+        {
+            var result = await VisualStudioIntegrationInstaller.InstallAsync(instances);
+            MessageBox.Show(
+                result.Message,
+                "Visual Studio 연동",
+                MessageBoxButtons.OK,
+                result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _visualStudioIntegrationItem.Enabled = true;
+        }
+    }
+
     private void ShowVsCodeIntegrationPrompt()
     {
-        _integrationPromptTimer.Stop();
         if (_settings.VsCodeIntegrationPromptShown
             || !VsCodeIntegrationInstaller.IsVsCodeInstalled
             || _vsCodeIntegrationService.IsConnected)
@@ -474,6 +552,30 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ShowBalloon(
             "VS Code 단축키 연동 가능",
             "트레이 메뉴의 ‘VS Code 연동...’에서 현재 컨텍스트 단축키 기능을 설치할 수 있습니다.",
+            ToolTipIcon.Info,
+            force: true);
+    }
+
+    private void ShowVisualStudioIntegrationPrompt()
+    {
+        if (_settings.VisualStudioIntegrationPromptShown
+            || !VisualStudioIntegrationInstaller.IsVisualStudioInstalled
+            || _visualStudioIntegrationService.IsConnected)
+        {
+            return;
+        }
+
+        _settings.VisualStudioIntegrationPromptShown = true;
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
+        ShowBalloon(
+            "Visual Studio 단축키 연동 가능",
+            "트레이 메뉴의 ‘Visual Studio 연동...’에서 2022·2026 현재 컨텍스트 단축키 기능을 설치할 수 있습니다.",
             ToolTipIcon.Info,
             force: true);
     }

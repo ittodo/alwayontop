@@ -44,6 +44,17 @@ jobs:
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Build Visual Studio integration extension
+        shell: pwsh
+        run: |
+          dotnet build .\extensions\visualstudio\TrayAlwaysOnTop.VisualStudio.csproj `
+            --configuration Release `
+            -p:Version=${{ steps.version.outputs.value }}
+          Copy-Item `
+            .\extensions\visualstudio\bin\Release\TrayAlwaysOnTop-VisualStudio.vsix `
+            .\artifacts\TrayAlwaysOnTop-VisualStudio.vsix `
+            -Force
+
       - name: Install matching Velopack CLI
         shell: pwsh
         run: dotnet tool install -g vpk --version 1.2.0

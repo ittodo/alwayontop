@@ -22,10 +22,14 @@ internal sealed class GlobalModifierOverlayService : IDisposable
     private readonly Func<IReadOnlyList<ContextualShortcut>> _getContextualShortcuts;
     private readonly ModifierShortcutOverlayForm _overlay = new();
     private readonly System.Windows.Forms.Timer _showTimer = new() { Interval = 420 };
+    private readonly System.Windows.Forms.Timer _chordTimer = new() { Interval = 100 };
     private readonly HashSet<uint> _pressedModifierKeys = [];
     private readonly WinKeyGestureTracker _winKeyTracker = new();
     private readonly NativeMethods.LowLevelKeyboardProc _hookCallback;
     private nint _hookHandle;
+    private bool _chordActive;
+    private long _chordExpiresAt;
+    private nint _chordForegroundWindow;
     private bool _disposed;
 
     public GlobalModifierOverlayService(
@@ -38,6 +42,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
         _getContextualShortcuts = getContextualShortcuts ?? (() => []);
         _hookCallback = HookCallback;
         _showTimer.Tick += (_, _) => ShowPendingOverlay();
+        _chordTimer.Tick += (_, _) => CheckChordState();
     }
 
     public bool TrySetEnabled(bool enabled, out string? error)
@@ -87,6 +92,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
         _disposed = true;
         Disable();
         _showTimer.Dispose();
+        _chordTimer.Dispose();
         _overlay.Dispose();
     }
 
@@ -136,7 +142,20 @@ internal sealed class GlobalModifierOverlayService : IDisposable
                 else if (isKeyDown)
                 {
                     _showTimer.Stop();
-                    _overlay.HideOverlay();
+                    if (_overlay.Visible
+                        && !_chordActive
+                        && keyboardInput.VirtualKeyCode != (uint)Keys.Escape
+                        && _overlay.TryShowChordFor((Keys)keyboardInput.VirtualKeyCode))
+                    {
+                        _chordActive = true;
+                        _chordExpiresAt = Environment.TickCount64 + 2000;
+                        _chordForegroundWindow = NativeMethods.GetForegroundWindow();
+                        _chordTimer.Start();
+                    }
+                    else
+                    {
+                        ResetChordAndHideOverlay();
+                    }
                     var winKeys = _winKeyTracker.DeliverForShortcut();
                     if (winKeys.Count > 0
                         && InjectShortcutKeyDown(winKeys, keyboardInput.VirtualKeyCode))
@@ -199,6 +218,11 @@ internal sealed class GlobalModifierOverlayService : IDisposable
     private void HandleModifiersChanged()
     {
         var modifiers = GetPressedModifiers();
+        if (_chordActive)
+        {
+            return;
+        }
+
         if (modifiers == HotKeyModifiers.None)
         {
             _showTimer.Stop();
@@ -231,6 +255,30 @@ internal sealed class GlobalModifierOverlayService : IDisposable
         }
     }
 
+    private void CheckChordState()
+    {
+        if (!_chordActive)
+        {
+            _chordTimer.Stop();
+            return;
+        }
+
+        if (Environment.TickCount64 >= _chordExpiresAt
+            || NativeMethods.GetForegroundWindow() != _chordForegroundWindow)
+        {
+            ResetChordAndHideOverlay();
+        }
+    }
+
+    private void ResetChordAndHideOverlay()
+    {
+        _chordActive = false;
+        _chordExpiresAt = 0;
+        _chordForegroundWindow = nint.Zero;
+        _chordTimer.Stop();
+        _overlay.HideOverlay();
+    }
+
     private HotKeyModifiers GetPressedModifiers()
     {
         var modifiers = HotKeyModifiers.None;
@@ -245,7 +293,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
     private void Disable()
     {
         _showTimer.Stop();
-        _overlay.HideOverlay();
+        ResetChordAndHideOverlay();
         if (_hookHandle != nint.Zero)
         {
             NativeMethods.UnhookWindowsHookEx(_hookHandle);

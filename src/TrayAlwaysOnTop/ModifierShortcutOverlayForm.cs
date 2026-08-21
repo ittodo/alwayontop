@@ -31,6 +31,8 @@ internal sealed class ModifierShortcutOverlayForm : Form
     private int _currentPage;
     private Rectangle _previousPageBounds;
     private Rectangle _nextPageBounds;
+    private IReadOnlyList<ContextualShortcut> _contextualShortcuts = [];
+    private string? _titleOverride;
 
     public ModifierShortcutOverlayForm()
     {
@@ -65,6 +67,8 @@ internal sealed class ModifierShortcutOverlayForm : Form
         IReadOnlyList<ContextualShortcut> contextualShortcuts)
     {
         _modifiers = NormalizeModifiers(modifiers);
+        _contextualShortcuts = contextualShortcuts;
+        _titleOverride = null;
         var hints = WindowsShortcutCatalog.Shortcuts
             .Where(shortcut => NormalizeModifiers(shortcut.Modifiers) == _modifiers)
             .Select(shortcut => new ModifierShortcutHint(
@@ -88,6 +92,48 @@ internal sealed class ModifierShortcutOverlayForm : Form
                 ShortcutVisualKind.ThisApp));
         }
 
+        ApplyHints(hints);
+    }
+
+    public bool TryShowChordFor(Keys pressedKey)
+    {
+        var matches = _contextualShortcuts
+            .Where(shortcut => NormalizeModifiers(shortcut.Modifiers) == _modifiers
+                && (shortcut.Key & Keys.KeyCode) == (pressedKey & Keys.KeyCode)
+                && !string.IsNullOrWhiteSpace(shortcut.RemainingChord))
+            .Select(shortcut =>
+            {
+                var parsed = VsCodeKeyGestureParser.TryParse(
+                    shortcut.RemainingChord!,
+                    out var modifiers,
+                    out var key,
+                    out _);
+                return (Shortcut: shortcut, Parsed: parsed, Modifiers: modifiers, Key: key);
+            })
+            .Where(item => item.Parsed)
+            .ToArray();
+        if (matches.Length == 0)
+        {
+            return false;
+        }
+
+        var firstStroke = HotKeyFormatter.Format(_modifiers, pressedKey);
+        _modifiers = matches[0].Modifiers;
+        _titleOverride = $"{firstStroke} 다음 키";
+        var hints = matches
+            .Where(item => item.Modifiers == _modifiers)
+            .Select(item => new ModifierShortcutHint(
+                item.Key,
+                $"{item.Shortcut.Source} · {RemoveNextKeySuffix(item.Shortcut.Description)}",
+                item.Shortcut.Kind))
+            .DistinctBy(hint => (hint.Key, hint.Description))
+            .ToList();
+        ApplyHints(hints);
+        return true;
+    }
+
+    private void ApplyHints(IReadOnlyList<ModifierShortcutHint> hints)
+    {
         _hints = hints;
         var activeScreen = Screen.FromHandle(NativeMethods.GetForegroundWindow());
         var workingArea = activeScreen.WorkingArea;
@@ -141,7 +187,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
         using var titleBrush = new SolidBrush(Color.White);
         using var secondaryBrush = new SolidBrush(Color.FromArgb(185, 192, 202));
         graphics.DrawString(
-            $"{FormatModifiers(_modifiers)} 조합 단축키",
+            _titleOverride ?? $"{FormatModifiers(_modifiers)} 조합 단축키",
             titleFont,
             titleBrush,
             new PointF(20, 14));
@@ -198,6 +244,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
         {
             ShortcutVisualKind.ThisApp => Color.FromArgb(39, 190, 124),
             ShortcutVisualKind.VsCode => Color.FromArgb(167, 112, 239),
+            ShortcutVisualKind.VisualStudio => Color.FromArgb(45, 162, 228),
             ShortcutVisualKind.WindowsTerminal => Color.FromArgb(235, 158, 52),
             _ => Color.FromArgb(65, 143, 240)
         };
@@ -407,5 +454,11 @@ internal sealed class ModifierShortcutOverlayForm : Form
         if (modifiers.HasFlag(HotKeyModifiers.Alt)) parts.Add("Alt");
         if (modifiers.HasFlag(HotKeyModifiers.Shift)) parts.Add("Shift");
         return string.Join(" + ", parts);
+    }
+
+    private static string RemoveNextKeySuffix(string description)
+    {
+        var separator = description.IndexOf(" · 다음 키:", StringComparison.Ordinal);
+        return separator >= 0 ? description[..separator] : description;
     }
 }

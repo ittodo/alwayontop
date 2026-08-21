@@ -12,6 +12,7 @@ $publishDirectory = Join-Path $artifactRoot "publish\$Runtime"
 $releaseDirectory = Join-Path $artifactRoot 'releases'
 $project = Join-Path $projectRoot 'src\TrayAlwaysOnTop\TrayAlwaysOnTop.csproj'
 $vsCodeExtension = Join-Path $projectRoot 'extensions\vscode'
+$visualStudioExtension = Join-Path $projectRoot 'extensions\visualstudio\TrayAlwaysOnTop.VisualStudio.csproj'
 
 $resolvedRoot = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\') + '\'
 $resolvedArtifacts = [System.IO.Path]::GetFullPath($artifactRoot).TrimEnd('\') + '\'
@@ -35,6 +36,12 @@ try {
 finally {
     Pop-Location
 }
+
+dotnet build $visualStudioExtension --configuration Release -p:Version=$Version
+if ($LASTEXITCODE -ne 0) { throw 'Visual Studio extension packaging failed.' }
+$visualStudioVsix = Join-Path $projectRoot 'extensions\visualstudio\bin\Release\TrayAlwaysOnTop-VisualStudio.vsix'
+if (-not (Test-Path -LiteralPath $visualStudioVsix)) { throw 'Visual Studio VSIX output was not created.' }
+Copy-Item -LiteralPath $visualStudioVsix -Destination (Join-Path $artifactRoot 'TrayAlwaysOnTop-VisualStudio.vsix') -Force
 
 dotnet publish $project `
     --configuration Release `

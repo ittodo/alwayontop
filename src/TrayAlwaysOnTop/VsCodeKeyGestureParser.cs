@@ -103,10 +103,17 @@ internal static class VsCodeKeyGestureParser
 
         key = value switch
         {
-            "plus" or "equal" or "equals" => Keys.Oemplus,
-            "minus" => Keys.OemMinus,
-            "period" => Keys.OemPeriod,
-            "comma" => Keys.Oemcomma,
+            "plus" or "equal" or "equals" or "oemplus" => Keys.Oemplus,
+            "minus" or "oemminus" => Keys.OemMinus,
+            "period" or "oemperiod" => Keys.OemPeriod,
+            "comma" or "oemcomma" => Keys.Oemcomma,
+            "semicolon" or "oemsemicolon" => Keys.OemSemicolon,
+            "quote" or "quotes" or "oemquotes" => Keys.OemQuotes,
+            "openbracket" or "oemopenbrackets" => Keys.OemOpenBrackets,
+            "closebracket" or "oemclosebrackets" => Keys.OemCloseBrackets,
+            "backslash" or "oempipe" => Keys.OemPipe,
+            "slash" or "oemquestion" => Keys.OemQuestion,
+            "tilde" or "oemtilde" => Keys.Oemtilde,
             "escape" or "esc" => Keys.Escape,
             "tab" => Keys.Tab,
             "space" => Keys.Space,
@@ -116,14 +123,14 @@ internal static class VsCodeKeyGestureParser
             "insert" => Keys.Insert,
             "home" => Keys.Home,
             "end" => Keys.End,
-            "pageup" => Keys.PageUp,
+            "pageup" or "leftpageup" => Keys.PageUp,
             "pagedown" or "pgdn" => Keys.PageDown,
             "pgup" => Keys.PageUp,
             "app" or "menu" => Keys.Apps,
-            "up" => Keys.Up,
-            "down" => Keys.Down,
-            "left" => Keys.Left,
-            "right" => Keys.Right,
+            "up" or "uparrow" => Keys.Up,
+            "down" or "downarrow" => Keys.Down,
+            "left" or "leftarrow" => Keys.Left,
+            "right" or "rightarrow" => Keys.Right,
             _ => Keys.None
         };
         return key != Keys.None;

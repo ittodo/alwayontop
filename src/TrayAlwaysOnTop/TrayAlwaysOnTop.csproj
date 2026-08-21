@@ -26,4 +26,12 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\..\artifacts\TrayAlwaysOnTop-VisualStudio.vsix')">
+    <Content Include="..\..\artifacts\TrayAlwaysOnTop-VisualStudio.vsix">
+      <Link>Integrations\TrayAlwaysOnTop-VisualStudio.vsix</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
