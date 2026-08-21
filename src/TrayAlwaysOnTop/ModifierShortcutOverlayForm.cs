@@ -9,10 +9,10 @@ internal sealed record ModifierShortcutHint(
 
 internal sealed class ModifierShortcutOverlayForm : Form
 {
-    private const int HeaderHeight = 72;
-    private const int RowHeight = 38;
-    private const int ColumnWidth = 300;
-    private const int MaximumVisibleRows = 8;
+    private const int HeaderHeight = 78;
+    private const int RowHeight = 54;
+    private const int ColumnWidth = 380;
+    private const int MaximumVisibleRows = 7;
     private IReadOnlyList<ModifierShortcutHint> _hints = [];
     private HotKeyModifiers _modifiers;
     private int _columns = 1;
@@ -80,13 +80,17 @@ internal sealed class ModifierShortcutOverlayForm : Form
         }
 
         _hints = hints;
-        _columns = Math.Clamp((int)Math.Ceiling(Math.Max(1, hints.Count) / 8d), 1, 3);
+        var activeScreen = Screen.FromHandle(NativeMethods.GetForegroundWindow());
+        var workingArea = activeScreen.WorkingArea;
+        var maximumColumns = Math.Clamp((workingArea.Width - 64) / ColumnWidth, 1, 3);
+        _columns = Math.Clamp(
+            (int)Math.Ceiling(Math.Max(1, hints.Count) / (double)MaximumVisibleRows),
+            1,
+            maximumColumns);
         _rows = Math.Max(1, (int)Math.Ceiling(Math.Max(1, hints.Count) / (double)_columns));
         var desiredSize = new Size(
             _columns * ColumnWidth + 40,
             HeaderHeight + Math.Min(_rows, MaximumVisibleRows) * RowHeight + 22);
-        var activeScreen = Screen.FromHandle(NativeMethods.GetForegroundWindow());
-        var workingArea = activeScreen.WorkingArea;
         Size = new Size(
             Math.Min(desiredSize.Width, workingArea.Width - 24),
             Math.Min(desiredSize.Height, workingArea.Height - 24));
@@ -143,7 +147,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
             titleBrush,
             new PointF(20, 14));
         graphics.DrawString(
-            "보조키를 누른 상태에서 대상 키를 누르세요",
+            $"보조키를 누른 상태에서 대상 키를 누르세요 · {_hints.Count}개 항목",
             rowFont,
             secondaryBrush,
             new PointF(20, 43));
@@ -181,7 +185,7 @@ internal sealed class ModifierShortcutOverlayForm : Form
     {
         var x = 20 + column * ColumnWidth;
         var y = HeaderHeight + row * RowHeight + 4 - (int)scrollOffset;
-        var keyBounds = new Rectangle(x, y, 62, 29);
+        var keyBounds = new Rectangle(x, y + 8, 62, 30);
         var accent = hint.Kind switch
         {
             ShortcutVisualKind.ThisApp => Color.FromArgb(39, 190, 124),
@@ -202,14 +206,14 @@ internal sealed class ModifierShortcutOverlayForm : Form
             Color.White,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
-        var descriptionBounds = new Rectangle(x + 72, y, ColumnWidth - 88, 29);
+        var descriptionBounds = new Rectangle(x + 72, y, ColumnWidth - 88, 46);
         TextRenderer.DrawText(
             graphics,
             hint.Description,
             rowFont,
             descriptionBounds,
             Color.FromArgb(232, 235, 240),
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
     }
 
     protected override void Dispose(bool disposing)

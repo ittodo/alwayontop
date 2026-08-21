@@ -60,7 +60,7 @@ internal sealed class KeyboardShortcutMapControl : Control
 
         var scale = DeviceDpi / 96f;
         var padding = 10f * scale;
-        var headerHeight = 34f * scale;
+        var headerHeight = 64f * scale;
         DrawSelectionHeader(graphics, new RectangleF(padding, padding, ClientSize.Width - padding * 2, headerHeight));
 
         var availableWidth = Math.Max(1f, ClientSize.Width - padding * 2);
@@ -189,21 +189,56 @@ internal sealed class KeyboardShortcutMapControl : Control
     private void DrawSelectionHeader(Graphics graphics, RectangleF bounds)
     {
         var selected = _selectedShortcut;
-        var text = selected is null
-            ? "키보드나 목록에서 단축키를 선택하세요."
-            : $"{selected.Shortcut}  —  {selected.Description}";
         var accent = selected is null ? Color.FromArgb(105, 110, 118) : GetAccentColor(selected.Kind);
         var dotSize = Math.Max(8f, 10f * DeviceDpi / 96f);
         using var dotBrush = new SolidBrush(accent);
         graphics.FillEllipse(dotBrush, bounds.X, bounds.Y + (bounds.Height - dotSize) / 2f, dotSize, dotSize);
-        using var headerFont = new Font(Font, FontStyle.Bold);
+        var textBounds = new RectangleF(
+            bounds.X + dotSize + 8f,
+            bounds.Y,
+            bounds.Width - dotSize - 8f,
+            bounds.Height);
+        if (selected is null)
+        {
+            using var emptyFont = new Font(Font, FontStyle.Bold);
+            TextRenderer.DrawText(
+                graphics,
+                "키보드나 목록에서 단축키를 선택하세요.",
+                emptyFont,
+                Rectangle.Round(textBounds),
+                Color.FromArgb(35, 39, 44),
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            return;
+        }
+
+        var relatedShortcuts = _shortcuts
+            .Where(shortcut => KeyMatches(shortcut.Key, selected.Key))
+            .ToArray();
+        var selectedIndex = Array.FindIndex(relatedShortcuts, shortcut => shortcut == selected);
+        var position = relatedShortcuts.Length > 1 && selectedIndex >= 0
+            ? $"  ({selectedIndex + 1}/{relatedShortcuts.Length})"
+            : string.Empty;
+        var firstLineHeight = 24f * DeviceDpi / 96f;
+        using var shortcutFont = new Font(Font, FontStyle.Bold);
+        using var descriptionFont = new Font(Font.FontFamily, Math.Max(8f, Font.Size - 0.5f), FontStyle.Regular);
         TextRenderer.DrawText(
             graphics,
-            text,
-            headerFont,
-            Rectangle.Round(new RectangleF(bounds.X + dotSize + 8f, bounds.Y, bounds.Width - dotSize - 8f, bounds.Height)),
+            selected.Shortcut + position,
+            shortcutFont,
+            Rectangle.Round(new RectangleF(textBounds.X, textBounds.Y, textBounds.Width, firstLineHeight)),
             Color.FromArgb(35, 39, 44),
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+        TextRenderer.DrawText(
+            graphics,
+            selected.Description,
+            descriptionFont,
+            Rectangle.Round(new RectangleF(
+                textBounds.X,
+                textBounds.Y + firstLineHeight,
+                textBounds.Width,
+                textBounds.Height - firstLineHeight)),
+            Color.FromArgb(65, 70, 78),
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
     }
 
     private static void DrawCountBadge(
