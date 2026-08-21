@@ -7,19 +7,30 @@ internal sealed record ModifierShortcutHint(
     string Description,
     ShortcutVisualKind Kind);
 
+internal sealed record ShortcutOverlayLayout(
+    int Columns,
+    int RowsPerPage,
+    int ItemsPerPage,
+    int PageCount,
+    Size WindowSize);
+
 internal sealed class ModifierShortcutOverlayForm : Form
 {
     private const int HeaderHeight = 78;
     private const int RowHeight = 54;
     private const int ColumnWidth = 380;
-    private const int MaximumVisibleRows = 7;
+    private const int PreferredRowsPerColumn = 7;
+    private const int MaximumRowsPerPage = 10;
+    private const int FooterHeight = 52;
+    private const int WindowMargin = 24;
     private IReadOnlyList<ModifierShortcutHint> _hints = [];
     private HotKeyModifiers _modifiers;
     private int _columns = 1;
-    private int _rows;
-    private float _scrollOffset;
-    private int _scrollDelayTicks;
-    private readonly System.Windows.Forms.Timer _scrollTimer = new() { Interval = 33 };
+    private int _itemsPerPage = 1;
+    private int _pageCount = 1;
+    private int _currentPage;
+    private Rectangle _previousPageBounds;
+    private Rectangle _nextPageBounds;
 
     public ModifierShortcutOverlayForm()
     {
@@ -31,7 +42,6 @@ internal sealed class ModifierShortcutOverlayForm : Form
         Opacity = 0.96;
         DoubleBuffered = true;
         AccessibleName = "전역 보조키 단축키 안내";
-        _scrollTimer.Tick += (_, _) => AdvanceScroll();
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -41,10 +51,9 @@ internal sealed class ModifierShortcutOverlayForm : Form
         get
         {
             const int wsExToolWindow = 0x00000080;
-            const int wsExTransparent = 0x00000020;
             const int wsExNoActivate = 0x08000000;
             var parameters = base.CreateParams;
-            parameters.ExStyle |= wsExToolWindow | wsExTransparent | wsExNoActivate;
+            parameters.ExStyle |= wsExToolWindow | wsExNoActivate;
             return parameters;
         }
     }
@@ -82,24 +91,17 @@ internal sealed class ModifierShortcutOverlayForm : Form
         _hints = hints;
         var activeScreen = Screen.FromHandle(NativeMethods.GetForegroundWindow());
         var workingArea = activeScreen.WorkingArea;
-        var maximumColumns = Math.Clamp((workingArea.Width - 64) / ColumnWidth, 1, 3);
-        _columns = Math.Clamp(
-            (int)Math.Ceiling(Math.Max(1, hints.Count) / (double)MaximumVisibleRows),
-            1,
-            maximumColumns);
-        _rows = Math.Max(1, (int)Math.Ceiling(Math.Max(1, hints.Count) / (double)_columns));
-        var desiredSize = new Size(
-            _columns * ColumnWidth + 40,
-            HeaderHeight + Math.Min(_rows, MaximumVisibleRows) * RowHeight + 22);
-        Size = new Size(
-            Math.Min(desiredSize.Width, workingArea.Width - 24),
-            Math.Min(desiredSize.Height, workingArea.Height - 24));
+        var layout = CalculateLayout(hints.Count, workingArea.Size);
+        _columns = layout.Columns;
+        _itemsPerPage = layout.ItemsPerPage;
+        _pageCount = layout.PageCount;
+        _currentPage = 0;
+        Size = layout.WindowSize;
         Location = new Point(
             workingArea.Left + (workingArea.Width - Width) / 2,
             workingArea.Top + (workingArea.Height - Height) / 2);
+        UpdateNavigationBounds();
         UpdateRoundedRegion();
-        _scrollOffset = 0;
-        _scrollDelayTicks = 60;
         Invalidate();
 
         if (!Visible)
@@ -115,7 +117,6 @@ internal sealed class ModifierShortcutOverlayForm : Form
             Width,
             Height,
             NativeMethods.SwpNoActivate);
-        _scrollTimer.Start();
     }
 
     public void HideOverlay()
@@ -124,8 +125,6 @@ internal sealed class ModifierShortcutOverlayForm : Form
         {
             Hide();
         }
-
-        _scrollTimer.Stop();
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)
@@ -162,16 +161,26 @@ internal sealed class ModifierShortcutOverlayForm : Form
             return;
         }
 
-        var rowsPerColumn = (int)Math.Ceiling(_hints.Count / (double)_columns);
+        var pageHints = _hints
+            .Skip(_currentPage * _itemsPerPage)
+            .Take(_itemsPerPage)
+            .ToArray();
+        var rowsPerColumn = Math.Max(1, (int)Math.Ceiling(pageHints.Length / (double)_columns));
+        var contentBottom = _pageCount > 1 ? Height - FooterHeight : Height;
         var contentState = graphics.Save();
-        graphics.SetClip(new Rectangle(0, HeaderHeight, Width, Height - HeaderHeight));
-        for (var index = 0; index < _hints.Count; index++)
+        graphics.SetClip(new Rectangle(0, HeaderHeight, Width, contentBottom - HeaderHeight));
+        for (var index = 0; index < pageHints.Length; index++)
         {
             var column = index / rowsPerColumn;
             var row = index % rowsPerColumn;
-            DrawHint(graphics, _hints[index], column, row, _scrollOffset, rowFont, keyFont);
+            DrawHint(graphics, pageHints[index], column, row, rowFont, keyFont);
         }
         graphics.Restore(contentState);
+
+        if (_pageCount > 1)
+        {
+            DrawPageNavigation(graphics, rowFont);
+        }
     }
 
     private static void DrawHint(
@@ -179,12 +188,11 @@ internal sealed class ModifierShortcutOverlayForm : Form
         ModifierShortcutHint hint,
         int column,
         int row,
-        float scrollOffset,
         Font rowFont,
         Font keyFont)
     {
         var x = 20 + column * ColumnWidth;
-        var y = HeaderHeight + row * RowHeight + 4 - (int)scrollOffset;
+        var y = HeaderHeight + row * RowHeight + 4;
         var keyBounds = new Rectangle(x, y + 8, 62, 30);
         var accent = hint.Kind switch
         {
@@ -216,40 +224,158 @@ internal sealed class ModifierShortcutOverlayForm : Form
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
     }
 
-    protected override void Dispose(bool disposing)
+    protected override void OnMouseDown(MouseEventArgs eventArgs)
     {
-        if (disposing)
-        {
-            _scrollTimer.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
-
-    private void AdvanceScroll()
-    {
-        var viewportHeight = Math.Max(0, Height - HeaderHeight - 22);
-        var maximumOffset = Math.Max(0, _rows * RowHeight - viewportHeight);
-        if (maximumOffset <= 0)
+        base.OnMouseDown(eventArgs);
+        if (eventArgs.Button != MouseButtons.Left || _pageCount <= 1)
         {
             return;
         }
 
-        if (_scrollDelayTicks > 0)
+        if (_previousPageBounds.Contains(eventArgs.Location))
         {
-            _scrollDelayTicks--;
+            NavigatePage(-1);
+        }
+        else if (_nextPageBounds.Contains(eventArgs.Location))
+        {
+            NavigatePage(1);
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs eventArgs)
+    {
+        base.OnMouseMove(eventArgs);
+        Cursor = IsInteractiveNavigationPoint(eventArgs.Location) ? Cursors.Hand : Cursors.Default;
+    }
+
+    protected override void OnMouseLeave(EventArgs eventArgs)
+    {
+        base.OnMouseLeave(eventArgs);
+        Cursor = Cursors.Default;
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs eventArgs)
+    {
+        base.OnMouseWheel(eventArgs);
+        if (_pageCount <= 1 || eventArgs.Delta == 0)
+        {
             return;
         }
 
-        _scrollOffset += 0.66f;
-        if (_scrollOffset >= maximumOffset + RowHeight)
+        NavigatePage(eventArgs.Delta < 0 ? 1 : -1);
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        const int wmNcHitTest = 0x0084;
+        const int wmMouseActivate = 0x0021;
+        const int htClient = 1;
+        const int htTransparent = -1;
+        const int maNoActivate = 3;
+
+        if (message.Msg == wmMouseActivate)
         {
-            _scrollOffset = 0;
-            _scrollDelayTicks = 60;
+            message.Result = new nint(maNoActivate);
+            return;
         }
 
-        Invalidate(new Rectangle(0, HeaderHeight, Width, Height - HeaderHeight));
+        base.WndProc(ref message);
+        if (message.Msg == wmNcHitTest)
+        {
+            var packedPoint = message.LParam.ToInt64();
+            var screenPoint = new Point(
+                unchecked((short)(packedPoint & 0xffff)),
+                unchecked((short)((packedPoint >> 16) & 0xffff)));
+            var clientPoint = PointToClient(screenPoint);
+            message.Result = IsInteractiveNavigationPoint(clientPoint)
+                    ? new nint(htClient)
+                    : new nint(htTransparent);
+        }
     }
+
+    private void NavigatePage(int direction)
+    {
+        var nextPage = CalculatePage(_currentPage, direction, _pageCount);
+        if (nextPage == _currentPage)
+        {
+            return;
+        }
+
+        _currentPage = nextPage;
+        Invalidate();
+    }
+
+    private void DrawPageNavigation(Graphics graphics, Font font)
+    {
+        var inactive = Color.FromArgb(92, 99, 110);
+        var active = Color.FromArgb(235, 238, 243);
+        TextRenderer.DrawText(
+            graphics,
+            "◀",
+            font,
+            _previousPageBounds,
+            _currentPage > 0 ? active : inactive,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+        TextRenderer.DrawText(
+            graphics,
+            $"{_currentPage + 1} / {_pageCount}",
+            font,
+            new Rectangle(Width / 2 - 42, Height - FooterHeight + 8, 84, 34),
+            active,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+        TextRenderer.DrawText(
+            graphics,
+            "▶",
+            font,
+            _nextPageBounds,
+            _currentPage < _pageCount - 1 ? active : inactive,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+    }
+
+    private void UpdateNavigationBounds()
+    {
+        var y = Height - FooterHeight + 8;
+        _previousPageBounds = new Rectangle(Width / 2 - 86, y, 36, 34);
+        _nextPageBounds = new Rectangle(Width / 2 + 50, y, 36, 34);
+    }
+
+    private bool IsInteractiveNavigationPoint(Point point) =>
+        (_currentPage > 0 && _previousPageBounds.Contains(point))
+        || (_currentPage < _pageCount - 1 && _nextPageBounds.Contains(point));
+
+    internal static ShortcutOverlayLayout CalculateLayout(int hintCount, Size workingArea)
+    {
+        var count = Math.Max(1, hintCount);
+        var maximumColumns = Math.Clamp(
+            (workingArea.Width - WindowMargin - 40) / ColumnWidth,
+            1,
+            4);
+        var maximumRowsByScreen = Math.Max(
+            1,
+            (workingArea.Height - WindowMargin - HeaderHeight - FooterHeight - 16) / RowHeight);
+        var rowsPerPage = Math.Min(MaximumRowsPerPage, maximumRowsByScreen);
+        var columns = Math.Clamp(
+            (int)Math.Ceiling(count / (double)PreferredRowsPerColumn),
+            1,
+            maximumColumns);
+        if (count > columns * rowsPerPage)
+        {
+            columns = Math.Min(maximumColumns, (int)Math.Ceiling(count / (double)rowsPerPage));
+        }
+
+        var itemsPerPage = Math.Max(1, columns * rowsPerPage);
+        var pageCount = Math.Max(1, (int)Math.Ceiling(hintCount / (double)itemsPerPage));
+        var firstPageCount = Math.Min(count, itemsPerPage);
+        var visibleRows = Math.Max(1, (int)Math.Ceiling(firstPageCount / (double)columns));
+        var footerHeight = pageCount > 1 ? FooterHeight : 22;
+        var windowSize = new Size(
+            Math.Min(columns * ColumnWidth + 40, workingArea.Width - WindowMargin),
+            Math.Min(HeaderHeight + visibleRows * RowHeight + footerHeight, workingArea.Height - WindowMargin));
+        return new ShortcutOverlayLayout(columns, rowsPerPage, itemsPerPage, pageCount, windowSize);
+    }
+
+    internal static int CalculatePage(int currentPage, int direction, int pageCount) =>
+        Math.Clamp(currentPage + Math.Sign(direction), 0, Math.Max(0, pageCount - 1));
 
     private void UpdateRoundedRegion()
     {

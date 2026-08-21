@@ -126,6 +126,12 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--overlay-layout-smoke-test", StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = ShortcutOverlayLayoutSmokeTest() ? 0 : 9;
+            return;
+        }
+
         using var singleInstance = new Mutex(true, "Local\\TrayAlwaysOnTop.SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
         {
@@ -244,5 +250,29 @@ internal static class Program
             && WindowManager.IsProtectedShellWindow("Windows.UI.Core.CoreWindow", "StartMenuExperienceHost")
             && !WindowManager.IsProtectedShellWindow("CabinetWClass", "explorer")
             && !WindowManager.IsProtectedShellWindow("Chrome_WidgetWin_1", "chrome");
+    }
+
+    private static bool ShortcutOverlayLayoutSmokeTest()
+    {
+        var fullHd = ModifierShortcutOverlayForm.CalculateLayout(12, new Size(1920, 1040));
+        if (fullHd.Columns != 2
+            || fullHd.PageCount != 1
+            || fullHd.WindowSize.Width > 1920 - 24
+            || fullHd.WindowSize.Height > 1040 - 24)
+        {
+            return false;
+        }
+
+        var crowdedFullHd = ModifierShortcutOverlayForm.CalculateLayout(52, new Size(1920, 1040));
+        var crowdedLaptop = ModifierShortcutOverlayForm.CalculateLayout(52, new Size(1366, 728));
+        return crowdedFullHd.Columns == 4
+            && crowdedFullHd.PageCount == 2
+            && crowdedLaptop.Columns == 3
+            && crowdedLaptop.PageCount >= 2
+            && crowdedLaptop.WindowSize.Width <= 1366 - 24
+            && crowdedLaptop.WindowSize.Height <= 728 - 24
+            && ModifierShortcutOverlayForm.CalculatePage(0, -1, 3) == 0
+            && ModifierShortcutOverlayForm.CalculatePage(0, 1, 3) == 1
+            && ModifierShortcutOverlayForm.CalculatePage(2, 1, 3) == 2;
     }
 }
