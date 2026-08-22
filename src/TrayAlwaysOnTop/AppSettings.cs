@@ -20,6 +20,10 @@ internal sealed class AppSettings
 
     public bool ShowWindowsTerminalShortcuts { get; set; } = true;
 
+    public bool SuppressShortcutOverlayInFullscreenApps { get; set; } = true;
+
+    public List<string> ShortcutOverlayExcludedProcesses { get; set; } = [];
+
     public bool StartWithWindows { get; set; } = true;
 
     public bool VsCodeIntegrationPromptShown { get; set; }
@@ -37,6 +41,8 @@ internal sealed class AppSettings
         ShowVsCodeShortcuts = ShowVsCodeShortcuts,
         ShowVisualStudioShortcuts = ShowVisualStudioShortcuts,
         ShowWindowsTerminalShortcuts = ShowWindowsTerminalShortcuts,
+        SuppressShortcutOverlayInFullscreenApps = SuppressShortcutOverlayInFullscreenApps,
+        ShortcutOverlayExcludedProcesses = ShortcutOverlayExcludedProcesses.ToList(),
         StartWithWindows = StartWithWindows,
         VsCodeIntegrationPromptShown = VsCodeIntegrationPromptShown,
         VisualStudioIntegrationPromptShown = VisualStudioIntegrationPromptShown

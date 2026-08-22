@@ -42,6 +42,18 @@ internal static class Program
                 return;
             }
 
+            if (!overlayService.IsHookInstalled
+                || !overlayService.TrySetForegroundSuppressed(true, out _)
+                || overlayService.IsHookInstalled
+                || !overlayService.IsForegroundSuppressed
+                || !overlayService.TrySetForegroundSuppressed(false, out _)
+                || !overlayService.IsHookInstalled
+                || overlayService.IsForegroundSuppressed)
+            {
+                Environment.ExitCode = 15;
+                return;
+            }
+
             overlayService.TrySetEnabled(false, out _);
             return;
         }
@@ -166,6 +178,12 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--game-exclusion-smoke-test", StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = GameExclusionSmokeTest() ? 0 : 14;
+            return;
+        }
+
         using var singleInstance = new Mutex(true, "Local\\TrayAlwaysOnTop.SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
         {
@@ -249,12 +267,13 @@ internal static class Program
             return false;
         }
 
-        using var service = new VsCodeIntegrationService();
+        var pipeName = $"TrayAlwaysOnTop.VSCode.Test.{Guid.NewGuid():N}";
+        using var service = new VsCodeIntegrationService(pipeName);
         try
         {
             using var client = new NamedPipeClientStream(
                 ".",
-                "TrayAlwaysOnTop.VSCode",
+                pipeName,
                 PipeDirection.Out,
                 PipeOptions.Asynchronous);
             client.Connect(3000);
@@ -342,5 +361,84 @@ internal static class Program
             && ModifierShortcutOverlayForm.CalculatePage(0, -1, 3) == 0
             && ModifierShortcutOverlayForm.CalculatePage(0, 1, 3) == 1
             && ModifierShortcutOverlayForm.CalculatePage(2, 1, 3) == 2;
+    }
+
+    private static bool GameExclusionSmokeTest()
+    {
+        var migrated = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"ShowBorder\":false}");
+        if (migrated is null
+            || !migrated.SuppressShortcutOverlayInFullscreenApps
+            || migrated.ShortcutOverlayExcludedProcesses.Count != 0)
+        {
+            return false;
+        }
+
+        var settings = new AppSettings
+        {
+            ShortcutOverlayExcludedProcesses = [" Game.EXE ", "game", "Editor.exe"],
+            SuppressShortcutOverlayInFullscreenApps = true
+        };
+        var normalized = ForegroundShortcutOverlayPolicy.NormalizeProcessNames(
+            settings.ShortcutOverlayExcludedProcesses);
+        if (normalized.Count != 2
+            || !normalized.Contains("game.exe", StringComparer.OrdinalIgnoreCase)
+            || !ForegroundShortcutOverlayPolicy.IsManuallyExcluded("GAME", normalized))
+        {
+            return false;
+        }
+
+        var primaryMonitor = new Rectangle(0, 0, 1920, 1080);
+        var toleranceFullscreen = new Rectangle(-2, 1, 1924, 1078);
+        var maximizedWorkArea = new Rectangle(0, 0, 1920, 1040);
+        var secondaryMonitor = new Rectangle(-1920, 0, 1920, 1080);
+        if (!ForegroundShortcutOverlayPolicy.IsFullscreen(toleranceFullscreen, primaryMonitor)
+            || ForegroundShortcutOverlayPolicy.IsFullscreen(maximizedWorkArea, primaryMonitor)
+            || !ForegroundShortcutOverlayPolicy.IsFullscreen(secondaryMonitor, secondaryMonitor))
+        {
+            return false;
+        }
+
+        var manualWindowed = ForegroundShortcutOverlayPolicy.Evaluate(
+            "game.exe",
+            new Rectangle(100, 100, 1280, 720),
+            primaryMonitor,
+            settings);
+        var fullscreen = ForegroundShortcutOverlayPolicy.Evaluate(
+            "video.exe",
+            primaryMonitor,
+            primaryMonitor,
+            settings);
+        settings.SuppressShortcutOverlayInFullscreenApps = false;
+        var fullscreenAllowed = ForegroundShortcutOverlayPolicy.Evaluate(
+            "video.exe",
+            primaryMonitor,
+            primaryMonitor,
+            settings);
+        if (manualWindowed is not { IsExcluded: true, Reason: ShortcutOverlayExclusionReason.Manual }
+            || fullscreen is not { IsExcluded: true, Reason: ShortcutOverlayExclusionReason.Fullscreen }
+            || fullscreenAllowed.IsExcluded
+            || !new AppSettings().SuppressShortcutOverlayInFullscreenApps)
+        {
+            return false;
+        }
+
+        var testDirectory = Path.Combine(Path.GetTempPath(), $"TrayAlwaysOnTop.PolicyTest.{Guid.NewGuid():N}");
+        var testPath = Path.Combine(testDirectory, "settings.json");
+        try
+        {
+            var store = new SettingsStore(testPath);
+            store.Save(settings);
+            var reloaded = store.Load();
+            return reloaded.ShortcutOverlayExcludedProcesses.SequenceEqual(
+                ["editor.exe", "game.exe"],
+                StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(testDirectory))
+            {
+                Directory.Delete(testDirectory, recursive: true);
+            }
+        }
     }
 }

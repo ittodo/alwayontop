@@ -14,6 +14,8 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _showVsCodeShortcuts = new() { Text = "VS Code의 현재 컨텍스트 단축키 함께 표시", AutoSize = true };
     private readonly CheckBox _showVisualStudioShortcuts = new() { Text = "Visual Studio의 현재 컨텍스트 단축키 함께 표시", AutoSize = true };
     private readonly CheckBox _showWindowsTerminalShortcuts = new() { Text = "Windows Terminal의 설정된 단축키 함께 표시", AutoSize = true };
+    private readonly CheckBox _suppressInFullscreen = new() { Text = "전체화면 앱에서는 단축키 안내 표시 안 함", AutoSize = true };
+    private readonly ListBox _excludedProcesses = new() { Dock = DockStyle.Fill, Height = 92 };
     private readonly CheckBox _startWithWindows = new() { Text = "Windows 시작 시 자동 실행", AutoSize = true };
 
     public AppSettings Result { get; private set; }
@@ -24,7 +26,7 @@ internal sealed class SettingsForm : Form
 
         Text = "Tray Always On Top 설정";
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(450, 425);
+        ClientSize = new Size(520, 610);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -53,6 +55,11 @@ internal sealed class SettingsForm : Form
         _showVsCodeShortcuts.Checked = settings.ShowVsCodeShortcuts;
         _showVisualStudioShortcuts.Checked = settings.ShowVisualStudioShortcuts;
         _showWindowsTerminalShortcuts.Checked = settings.ShowWindowsTerminalShortcuts;
+        _suppressInFullscreen.Checked = settings.SuppressShortcutOverlayInFullscreenApps;
+        foreach (var processName in ForegroundShortcutOverlayPolicy.NormalizeProcessNames(settings.ShortcutOverlayExcludedProcesses))
+        {
+            _excludedProcesses.Items.Add(processName);
+        }
         _startWithWindows.Checked = settings.StartWithWindows;
 
         var modifiers = new FlowLayoutPanel
@@ -77,13 +84,53 @@ internal sealed class SettingsForm : Form
         };
         buttons.Controls.AddRange([cancelButton, saveButton]);
 
+        var removeExcludedButton = new Button { Text = "선택한 앱 삭제", AutoSize = true };
+        removeExcludedButton.Click += (_, _) =>
+        {
+            if (_excludedProcesses.SelectedIndex >= 0)
+            {
+                _excludedProcesses.Items.RemoveAt(_excludedProcesses.SelectedIndex);
+            }
+        };
+        var excludedApps = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 1,
+            RowCount = 4,
+            Margin = new Padding(0, 8, 0, 8)
+        };
+        excludedApps.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        excludedApps.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        excludedApps.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        excludedApps.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        excludedApps.Controls.Add(new Label
+        {
+            Text = "단축키 안내 제외 앱",
+            AutoSize = true,
+            Font = new Font(Font, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 6)
+        });
+        excludedApps.Controls.Add(_excludedProcesses);
+        excludedApps.Controls.Add(removeExcludedButton);
+        excludedApps.Controls.Add(new Label
+        {
+            Text = "앱 추가는 트레이 메뉴의 ‘현재 앱 단축키 안내 제외’를 사용하세요.",
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText,
+            MaximumSize = new Size(460, 0),
+            Margin = new Padding(0, 6, 0, 0)
+        });
+
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(18),
             ColumnCount = 1,
-            RowCount = 12
+            RowCount = 14
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -112,6 +159,8 @@ internal sealed class SettingsForm : Form
         layout.Controls.Add(_showVsCodeShortcuts);
         layout.Controls.Add(_showVisualStudioShortcuts);
         layout.Controls.Add(_showWindowsTerminalShortcuts);
+        layout.Controls.Add(_suppressInFullscreen);
+        layout.Controls.Add(excludedApps);
         layout.Controls.Add(_startWithWindows);
         layout.Controls.Add(new Label
         {
@@ -153,7 +202,12 @@ internal sealed class SettingsForm : Form
             ShowVsCodeShortcuts = _showVsCodeShortcuts.Checked,
             ShowVisualStudioShortcuts = _showVisualStudioShortcuts.Checked,
             ShowWindowsTerminalShortcuts = _showWindowsTerminalShortcuts.Checked,
-            StartWithWindows = _startWithWindows.Checked
+            SuppressShortcutOverlayInFullscreenApps = _suppressInFullscreen.Checked,
+            ShortcutOverlayExcludedProcesses = ForegroundShortcutOverlayPolicy.NormalizeProcessNames(
+                _excludedProcesses.Items.Cast<string>()).ToList(),
+            StartWithWindows = _startWithWindows.Checked,
+            VsCodeIntegrationPromptShown = Result.VsCodeIntegrationPromptShown,
+            VisualStudioIntegrationPromptShown = Result.VisualStudioIntegrationPromptShown
         };
         DialogResult = DialogResult.OK;
         Close();

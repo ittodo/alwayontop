@@ -30,7 +30,13 @@ internal sealed class GlobalModifierOverlayService : IDisposable
     private bool _chordActive;
     private long _chordExpiresAt;
     private nint _chordForegroundWindow;
+    private bool _requestedEnabled;
+    private bool _foregroundSuppressed;
     private bool _disposed;
+
+    internal bool IsHookInstalled => _hookHandle != nint.Zero;
+
+    internal bool IsForegroundSuppressed => _foregroundSuppressed;
 
     public GlobalModifierOverlayService(
         Func<AppSettings> getSettings,
@@ -53,12 +59,61 @@ internal sealed class GlobalModifierOverlayService : IDisposable
             return false;
         }
 
+        _requestedEnabled = enabled;
         if (!enabled)
         {
-            Disable();
+            DisableHookAndResetState();
             error = null;
             return true;
         }
+
+        if (_foregroundSuppressed)
+        {
+            error = null;
+            return true;
+        }
+
+        return TryInstallHook(out error);
+    }
+
+    public bool TrySetForegroundSuppressed(bool suppressed, out string? error)
+    {
+        if (_disposed)
+        {
+            error = "전역 단축키 안내 서비스가 이미 종료되었습니다.";
+            return false;
+        }
+
+        if (_foregroundSuppressed == suppressed)
+        {
+            if (!suppressed && _requestedEnabled && _hookHandle == nint.Zero)
+            {
+                return TryInstallHook(out error);
+            }
+
+            error = null;
+            return true;
+        }
+
+        _foregroundSuppressed = suppressed;
+        if (suppressed)
+        {
+            DisableHookAndResetState();
+            error = null;
+            return true;
+        }
+
+        if (!_requestedEnabled)
+        {
+            error = null;
+            return true;
+        }
+
+        return TryInstallHook(out error);
+    }
+
+    private bool TryInstallHook(out string? error)
+    {
 
         if (_hookHandle != nint.Zero)
         {
@@ -90,7 +145,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
         }
 
         _disposed = true;
-        Disable();
+        DisableHookAndResetState();
         _showTimer.Dispose();
         _chordTimer.Dispose();
         _overlay.Dispose();
@@ -290,7 +345,7 @@ internal sealed class GlobalModifierOverlayService : IDisposable
         return modifiers;
     }
 
-    private void Disable()
+    private void DisableHookAndResetState()
     {
         _showTimer.Stop();
         ResetChordAndHideOverlay();

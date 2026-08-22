@@ -6,18 +6,20 @@ namespace TrayAlwaysOnTop;
 
 internal sealed class VsCodeIntegrationService : IDisposable
 {
-    private const string PipeName = "TrayAlwaysOnTop.VSCode";
+    private const string DefaultPipeName = "TrayAlwaysOnTop.VSCode";
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _sync = new();
+    private readonly string _pipeName;
     private VsCodeShortcutMessage? _latest;
     private VsCodeShortcutMessage? _lastActive;
     private DateTime _receivedAtUtc;
     private DateTime _lastActiveReceivedAtUtc;
     private bool _disposed;
 
-    public VsCodeIntegrationService()
+    public VsCodeIntegrationService(string pipeName = DefaultPipeName)
     {
+        _pipeName = pipeName;
         _ = Task.Run(() => RunServerAsync(_shutdown.Token));
     }
 
@@ -111,7 +113,7 @@ internal sealed class VsCodeIntegrationService : IDisposable
             try
             {
                 var pipe = new NamedPipeServerStream(
-                    PipeName,
+                    _pipeName,
                     PipeDirection.In,
                     8,
                     PipeTransmissionMode.Byte,

@@ -8,12 +8,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly VsCodeIntegrationService _vsCodeIntegrationService = new();
     private readonly VisualStudioIntegrationService _visualStudioIntegrationService = new();
     private readonly WindowsTerminalShortcutService _windowsTerminalShortcutService = new();
+    private readonly ForegroundShortcutOverlayPolicy _shortcutOverlayPolicy = new();
     private readonly GlobalModifierOverlayService _modifierOverlayService;
     private readonly WindowManager _windowManager;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu = new();
     private readonly ToolStripMenuItem _currentWindowItem = new();
     private readonly ToolStripMenuItem _windowListItem = new("열린 창 선택");
+    private readonly ToolStripMenuItem _excludeCurrentAppItem = new("현재 앱 단축키 안내 제외");
     private readonly ToolStripMenuItem _hotKeyDiagnosticsItem = new("전역 단축키 목록...");
     private readonly ToolStripMenuItem _vsCodeIntegrationItem = new("VS Code 연동...");
     private readonly ToolStripMenuItem _visualStudioIntegrationItem = new("Visual Studio 연동...");
@@ -24,6 +26,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly CancellationTokenSource _shutdown = new();
     private AppSettings _settings;
     private bool _updateCheckRunning;
+    private bool _overlayResumeFailureShown;
+    private ShortcutOverlayPolicyResult _lastOverlayPolicy = ShortcutOverlayPolicyResult.Allowed();
     private bool _disposed;
 
     public TrayApplicationContext()
@@ -35,6 +39,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _currentWindowItem.Click += (_, _) => ToggleLastWindow();
         _windowListItem.DropDownOpening += (_, _) => PopulateWindowList();
+        _excludeCurrentAppItem.Click += (_, _) => ToggleCurrentAppShortcutExclusion();
 
         var settingsItem = new ToolStripMenuItem("설정...");
         settingsItem.Click += (_, _) => ShowSettings();
@@ -49,6 +54,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_currentWindowItem);
         _menu.Items.Add(_windowListItem);
+        _menu.Items.Add(_excludeCurrentAppItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_hotKeyDiagnosticsItem);
         _menu.Items.Add(_vsCodeIntegrationItem);
@@ -60,6 +66,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _windowManager.CaptureForegroundWindow();
             UpdateCurrentWindowItem();
+            UpdateExcludeCurrentAppItem();
         };
 
         _notifyIcon = new NotifyIcon
@@ -86,6 +93,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             () => _settings.Copy(),
             () => _hotKeyService.IsRegistered,
             GetForegroundContextualShortcuts);
+        _lastOverlayPolicy = _shortcutOverlayPolicy.Evaluate(NativeMethods.GetForegroundWindow(), _settings);
+        _modifierOverlayService.TrySetForegroundSuppressed(_lastOverlayPolicy.IsExcluded, out _);
         if (!_modifierOverlayService.TrySetEnabled(_settings.ShowGlobalShortcutOverlay, out var overlayError))
         {
             ShowBalloon(
@@ -104,6 +113,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _windowManager.CaptureForegroundWindow();
             _windowManager.Synchronize();
+            UpdateShortcutOverlaySuppression();
         };
         _timer.Start();
 
@@ -292,6 +302,98 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _currentWindowItem.Checked = _windowManager.IsTopmost(window.Handle);
     }
 
+    private void UpdateExcludeCurrentAppItem()
+    {
+        var window = _windowManager.GetLastExternalWindowInfo();
+        var processName = ForegroundShortcutOverlayPolicy.NormalizeProcessName(window?.ProcessName);
+        if (processName.Length == 0)
+        {
+            _excludeCurrentAppItem.Text = "현재 앱 단축키 안내 제외";
+            _excludeCurrentAppItem.Enabled = false;
+            _excludeCurrentAppItem.Checked = false;
+            return;
+        }
+
+        var manuallyExcluded = ForegroundShortcutOverlayPolicy.IsManuallyExcluded(
+            processName,
+            _settings.ShortcutOverlayExcludedProcesses);
+        _excludeCurrentAppItem.Text = $"현재 앱 단축키 안내 제외: {processName}";
+        if (!manuallyExcluded
+            && _lastOverlayPolicy.Reason == ShortcutOverlayExclusionReason.Fullscreen
+            && string.Equals(
+                ForegroundShortcutOverlayPolicy.NormalizeProcessName(_lastOverlayPolicy.ProcessName),
+                processName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _excludeCurrentAppItem.Text += " (전체화면 자동 제외 중)";
+        }
+
+        _excludeCurrentAppItem.Enabled = true;
+        _excludeCurrentAppItem.Checked = manuallyExcluded;
+    }
+
+    private void ToggleCurrentAppShortcutExclusion()
+    {
+        var window = _windowManager.GetLastExternalWindowInfo();
+        var processName = ForegroundShortcutOverlayPolicy.NormalizeProcessName(window?.ProcessName);
+        if (processName.Length == 0)
+        {
+            return;
+        }
+
+        var exclusions = ForegroundShortcutOverlayPolicy.NormalizeProcessNames(
+            _settings.ShortcutOverlayExcludedProcesses).ToList();
+        var existingIndex = exclusions.FindIndex(name =>
+            string.Equals(name, processName, StringComparison.OrdinalIgnoreCase));
+        var added = existingIndex < 0;
+        if (added)
+        {
+            exclusions.Add(processName);
+        }
+        else
+        {
+            exclusions.RemoveAt(existingIndex);
+        }
+
+        _settings.ShortcutOverlayExcludedProcesses =
+            ForegroundShortcutOverlayPolicy.NormalizeProcessNames(exclusions).ToList();
+        SaveSettingsWithWarning();
+        UpdateShortcutOverlaySuppression();
+        UpdateExcludeCurrentAppItem();
+        ShowBalloon(
+            "단축키 안내 제외",
+            added
+                ? $"{processName}에서는 단축키 안내를 표시하지 않습니다."
+                : $"{processName}에서 단축키 안내를 다시 표시합니다.",
+            ToolTipIcon.Info,
+            force: true);
+    }
+
+    private void UpdateShortcutOverlaySuppression()
+    {
+        _lastOverlayPolicy = _shortcutOverlayPolicy.Evaluate(NativeMethods.GetForegroundWindow(), _settings);
+        if (_modifierOverlayService.TrySetForegroundSuppressed(_lastOverlayPolicy.IsExcluded, out var error))
+        {
+            if (!_lastOverlayPolicy.IsExcluded)
+            {
+                _overlayResumeFailureShown = false;
+            }
+            return;
+        }
+
+        if (_overlayResumeFailureShown)
+        {
+            return;
+        }
+
+        _overlayResumeFailureShown = true;
+        ShowBalloon(
+            "단축키 안내 복구 실패",
+            error ?? "전역 키보드 감지를 다시 시작하지 못했습니다.",
+            ToolTipIcon.Warning,
+            force: true);
+    }
+
     private void PopulateWindowList()
     {
         _windowListItem.DropDownItems.Clear();
@@ -336,6 +438,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var overlayApplied = _modifierOverlayService.TrySetEnabled(
             _settings.ShowGlobalShortcutOverlay,
             out var overlayError);
+        UpdateShortcutOverlaySuppression();
         var startupApplied = StartupManager.TrySetEnabled(_settings.StartWithWindows, out var startupError);
         try
         {
@@ -369,6 +472,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         ShowBalloon("설정 저장됨", $"전역 단축키: {FormatHotKey(_settings)}", ToolTipIcon.Info);
+    }
+
+    private void SaveSettingsWithWarning()
+    {
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (IOException exception)
+        {
+            MessageBox.Show($"설정을 저장하지 못했습니다.\n{exception.Message}", "설정 저장 실패", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            MessageBox.Show($"설정을 저장하지 못했습니다.\n{exception.Message}", "설정 저장 실패", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private void ShowHotKeyDiagnostics()

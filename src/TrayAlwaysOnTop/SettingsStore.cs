@@ -11,8 +11,14 @@ internal sealed class SettingsStore
 
     private readonly string _settingsPath;
 
-    public SettingsStore()
+    public SettingsStore(string? settingsPath = null)
     {
+        if (!string.IsNullOrWhiteSpace(settingsPath))
+        {
+            _settingsPath = settingsPath;
+            return;
+        }
+
         var directory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "TrayAlwaysOnTop");
@@ -29,7 +35,14 @@ internal sealed class SettingsStore
             }
 
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_settingsPath), JsonOptions);
-            return settings is null || settings.Key == Keys.None ? new AppSettings() : settings;
+            if (settings is null || settings.Key == Keys.None)
+            {
+                return new AppSettings();
+            }
+
+            settings.ShortcutOverlayExcludedProcesses =
+                ForegroundShortcutOverlayPolicy.NormalizeProcessNames(settings.ShortcutOverlayExcludedProcesses).ToList();
+            return settings;
         }
         catch (JsonException)
         {
